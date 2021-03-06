@@ -2,28 +2,41 @@
 The egress API to download data from the DataPlatform
 """
 
-import logging.config
 from typing import Dict
-import configparser
 
+from http import HTTPStatus
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 
-config = configparser.ConfigParser()
-
-all_config_files = ['conf.ini', '/etc/config/conf.ini']
-config.read(all_config_files)
-
-logging.config.fileConfig(fname=config['Misc']["log_configuration_file"], disable_existing_loggers=False)
-logger = logging.getLogger(__file__)
-
-app = FastAPI(root_path=config['Misc']["root_path"])
+from .dependencies import Configuration
+from .routers import grafana_simplejson
 
 
-@app.get("/")
+configuration = Configuration(__file__)
+config = configuration.get_config()
+logger = configuration.get_logger()
+
+app = FastAPI(
+    title='Osiris Egress API',
+    version='0.1.0',
+    root_path=config['FastAPI']['root_path']
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=['*'],
+    allow_methods=['POST'],
+    allow_headers=['accept', 'content-type'],
+)
+
+app.include_router(grafana_simplejson.router)
+
+
+@app.get('/', status_code=HTTPStatus.OK)
 async def root() -> Dict[str, str]:
     """
-    A simple endpoint example.
+    Endpoint for basic connectivity test.
     """
     logger.debug('root requested')
-    return {"message": "Hello World"}
+    return {'message': 'OK'}
