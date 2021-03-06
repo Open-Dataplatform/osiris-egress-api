@@ -1,2 +1,8 @@
 fastapi
 requests
+msal
+azure-core
+azure-storage-file-datalake
+pandas
+numpy
+pydantic
