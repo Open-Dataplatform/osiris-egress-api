@@ -70,13 +70,12 @@ async def query(guid: str, request: QueryRequest,
     from_date = pd.Timestamp(request.range['from']).to_pydatetime()
     to_date = pd.Timestamp(request.range['to']).to_pydatetime()
 
-    data_df = __get_data_from_storage(from_date, to_date, directory_client)
+    data_df = __retrieve_data(from_date, to_date, directory_client)
+    data_df = __filter_with_adhoc_filters(data_df, request.adhocFilters)
 
     results = []
     for target in request.targets:
         if target.type == 'timeseries':
-            for adhoc_filter in request.adhocFilters:
-                data_df = data_df.loc[data_df[adhoc_filter.key] == adhoc_filter.value]
             results.extend(__dataframe_to_timeserie_response(data_df, target.target))
         else:
             results.extend(__dataframe_to_table_response(data_df))
@@ -221,8 +220,20 @@ def __arrange_time_range_in_dict(from_date: datetime, to_date: datetime) -> Dict
     return time_range_dict
 
 
-def __get_data_from_storage(from_date: datetime, to_date: datetime,
-                            directory_client: DataLakeDirectoryClient) -> DataFrame:
+def __retrieve_data(from_date: datetime, to_date: datetime,
+                    directory_client: DataLakeDirectoryClient) -> DataFrame:
+
+    data = __retrieve_data_from_storage(from_date, to_date, directory_client)
+
+    if data is not None:
+        data.set_index('timestamp', inplace=True)
+        data = data[from_date: to_date]  # type: ignore
+
+    return data
+
+
+def __retrieve_data_from_storage(from_date: datetime, to_date: datetime,
+                                 directory_client: DataLakeDirectoryClient) -> DataFrame:
 
     time_range_dict = __arrange_time_range_in_dict(from_date, to_date)
 
@@ -250,8 +261,8 @@ def __get_data_from_storage(from_date: datetime, to_date: datetime,
                     file_df = pd.read_json(file_client.download_file().readall())
                     data = pd.concat([data, file_df])
 
-    if data is not None:
-        data.set_index('timestamp', inplace=True)
+                    if data is not None and data.size > 10000:
+                        return data
 
     return data
 
@@ -279,3 +290,10 @@ def __get_file_client(directory_client: DataLakeDirectoryClient, path):
 def __get_grafana_settings(directory_client: DataLakeDirectoryClient) -> Dict:
     settings_data = directory_client.get_file_client('grafana_settings.json').download_file().readall()
     return json.loads(settings_data)
+
+
+def __filter_with_adhoc_filters(data_df: DataFrame, adhoc_filters: List):
+    for adhoc_filter in adhoc_filters:
+        data_df = data_df.loc[data_df[adhoc_filter.key] == adhoc_filter.value]
+
+    return data_df
