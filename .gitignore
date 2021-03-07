@@ -130,6 +130,7 @@ dmypy.json
 
 # IDE
 .idea
+server.py
 
 # configuration
 conf.ini

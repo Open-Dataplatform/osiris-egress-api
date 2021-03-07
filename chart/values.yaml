@@ -1,0 +1,71 @@
+appName: osiris-egress
+
+deployment:
+  replicas: 1
+  image:
+    repository: <IMAGENAME>
+    tag: latest
+
+service:
+  type: ClusterIP
+
+ingress:
+  enabled: false
+  host: 
+  path: /
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    kubernetes.io/ingress.class: nginx
+
+config:
+  conf.ini: |
+    [Logging]
+    configuration_file = <configuration_file>.conf
+
+    [FastAPI]
+    root_path = <root_path>
+
+    [Azure Storage]
+    account_url = https://<storage_name>.dfs.core.windows.net/
+    file_system_name = <container_name>
+
+    [Azure Authentication]
+    authority = https://login.microsoftonline.com/<tenant_name>
+    scopes = https://storage.azure.com/.default
+  log.conf: |
+    [loggers]
+    keys=root,main
+
+    [handlers]
+    keys=consoleHandler,fileHandler
+
+    [formatters]
+    keys=fileFormatter,consoleFormatter
+
+    [logger_root]
+    level=ERROR
+    handlers=consoleHandler
+
+    [logger_main]
+    level=ERROR
+    handlers=consoleHandler
+    qualname=main
+    propagate=0
+
+    [handler_consoleHandler]
+    class=StreamHandler
+    formatter=consoleFormatter
+    args=(sys.stdout,)
+
+    [handler_fileHandler]
+    class=FileHandler
+    formatter=fileFormatter
+    args=('logfile.log',)
+
+    [formatter_fileFormatter]
+    format=%(asctime)s - %(name)s - %(levelname)s - %(message)s
+    datefmt=
+
+    [formatter_consoleFormatter]
+    format=%(levelname)s: %(name)s - %(message)s

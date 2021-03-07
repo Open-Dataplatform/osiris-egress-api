@@ -1,0 +1,37 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: {{ .Values.appName }}
+    app.kubernetes.io/name: {{ .Values.appName }}
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/part-of: {{ .Values.appName }}
+    app.kubernetes.io/component: {{ .Values.appName }}
+    app.kubernetes.io/version: {{ .Chart.Version }}
+  name: {{ .Values.appName }}
+spec:
+  replicas: {{ .Values.deployment.replicas }}
+  selector:
+    matchLabels:
+      app: {{ .Values.appName }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.appName }}
+    spec:
+      containers:
+      - image: {{ .Values.deployment.image.repository }}:{{ .Values.deployment.image.tag }}
+        name: {{ .Values.appName }}
+        ports:
+        - containerPort: 80
+          name: deploy-port
+        volumeMounts:
+        - name: config-volume
+          mountPath: /etc/{{ .Values.appName }}/
+      volumes:
+      - name: config-volume
+        configMap:
+          name: {{ .Values.appName }}-cm
