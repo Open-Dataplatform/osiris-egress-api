@@ -7,4 +7,4 @@ pandas
 numpy
 pydantic
 asyncio
-aiohttep
+aiohttp
