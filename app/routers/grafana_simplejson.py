@@ -38,7 +38,7 @@ async def test_connection(guid: str, client_id: str = Header(None), client_secre
     """
     logger.debug('Grafana root requested for GUID %s', guid)
 
-    __get_directory_client(guid, client_id, client_secret)
+    await __get_directory_client(guid, client_id, client_secret)
 
     return {'message': 'Grafana datasource used for timeseries data.'}
 
@@ -50,10 +50,12 @@ async def search(guid: str, client_id: str = Header(None), client_secret: str = 
     """
     logger.debug('Grafana search requested for GUID %s', guid)
 
-    directory_client = __get_directory_client(guid, client_id, client_secret)
+    directory_client = await __get_directory_client(guid, client_id, client_secret)
     grafana_settings = await __get_grafana_settings(directory_client)
+    metrics = grafana_settings['metrics']
+    metrics.sort()
 
-    return grafana_settings['metrics']
+    return metrics
 
 
 @router.post('/{guid}/query', status_code=HTTPStatus.OK)
@@ -67,7 +69,7 @@ async def query(guid: str, request: QueryRequest,
     if not __target_set_for_timeseries(request.targets):
         return []
 
-    directory_client = __get_directory_client(guid, client_id, client_secret)
+    directory_client = await __get_directory_client(guid, client_id, client_secret)
     from_date = pd.Timestamp(request.range['from']).to_pydatetime()
     to_date = pd.Timestamp(request.range['to']).to_pydatetime()
 
@@ -103,7 +105,7 @@ async def tag_keys(guid: str, client_id: str = Header(None), client_secret: str 
     """
     logger.debug('Grafana tag-keys requested for GUID %s', guid)
 
-    directory_client = __get_directory_client(guid, client_id, client_secret)
+    directory_client = await __get_directory_client(guid, client_id, client_secret)
     grafana_settings = await __get_grafana_settings(directory_client)
 
     return grafana_settings['tag_keys']
@@ -117,7 +119,7 @@ async def tag_values(guid: str, request: TagValuesRequest,
     """
     logger.debug('Grafana tag-values requested for GUID %s', guid)
 
-    directory_client = __get_directory_client(guid, client_id, client_secret)
+    directory_client = await __get_directory_client(guid, client_id, client_secret)
     grafana_settings = await __get_grafana_settings(directory_client)
 
     return grafana_settings['tag_values'][request.key]
@@ -140,7 +142,8 @@ def __dataframe_to_timeserie_response(data_df: DataFrame, target: str, freq: str
 
     if freq is not None:
         orig_tz = data_df.index.tz
-        data_df = data_df.tz_convert('UTC').resample(rule=freq, label='right', closed='right').mean().tz_convert(orig_tz)
+        data_df = data_df.tz_convert('UTC').resample(rule=freq, label='right', closed='right') \
+                         .mean().tz_convert(orig_tz)
 
     data_df = data_df[target]
 
@@ -192,14 +195,14 @@ def __get_access_token(client_id: str, client_secret: str) -> str:
     return result['access_token']
 
 
-def __get_directory_client(guid: str, client_id: str, client_secret: str) -> DataLakeDirectoryClient:
+async def __get_directory_client(guid: str, client_id: str, client_secret: str) -> DataLakeDirectoryClient:
     account_url = config['Azure Storage']['account_url']
     file_system_name = config['Azure Storage']['file_system_name']
     credential = AzureCredential(__get_access_token(client_id, client_secret))
 
     directory_client = DataLakeDirectoryClient(account_url, file_system_name, guid, credential=credential)
     try:
-        directory_client.get_directory_properties()  # Test if the directory exist otherwise return error.
+        await directory_client.get_directory_properties()  # Test if the directory exist otherwise return error.
     except ResourceNotFoundError as error:
         logger.error(type(error).__name__, error)
         raise HTTPException(status_code=HTTPStatus.NOT_FOUND,
@@ -227,12 +230,9 @@ def __arrange_time_range_in_dict(from_date: datetime, to_date: datetime) -> Dict
     return time_range_dict
 
 
-async def __download_files(from_date: datetime, to_date: datetime,
-                           directory_client: DataLakeDirectoryClient) -> List:
+async def __download_files(timeslot_chunk: List[datetime], directory_client: DataLakeDirectoryClient) -> List:
 
-    time_range = pd.date_range(from_date, to_date, freq='D')
-
-    async def download(timeslot: datetime, directory_client) -> Optional[str]:
+    async def download(timeslot: datetime) -> Optional[str]:
         path = f'year={timeslot.year}/month={timeslot.month:02d}/day={timeslot.day:02d}/data.json'
 
         file_client: DataLakeFileClient = await __get_file_client(directory_client, path)
@@ -244,20 +244,34 @@ async def __download_files(from_date: datetime, to_date: datetime,
 
         return file_json
 
-    res = await asyncio.gather(*[download(timeslot, directory_client) for timeslot in time_range])
-    return res
+    return await asyncio.gather(*[download(timeslot) for timeslot in timeslot_chunk])
+
+
+def __split_into_chunks(lst, chunk_size):
+    for i in range(0, len(lst), chunk_size):
+        yield lst[i:i + chunk_size]
 
 
 async def __retrieve_data(from_date: datetime, to_date: datetime,
-                          directory_client: DataLakeDirectoryClient) -> DataFrame:
+                          directory_client: DataLakeDirectoryClient) -> Optional[DataFrame]:
 
-    data = await __download_files(from_date, to_date, directory_client)
+    time_range = pd.date_range(from_date, to_date, freq='D')
 
-    data = pd.concat(data)
+    data = None
+    # We need to divide the timeslots into chunks so we don't hit the limit of asyncio.gather.
+    for chunk in __split_into_chunks(time_range, 200):
+        df_list = await __download_files(chunk, directory_client)
 
-    if data is not None:
-        data.set_index('timestamp', inplace=True)
-        # data = data[from_date: to_date]  # type: ignore
+        if all(elem is None for elem in df_list):
+            continue
+
+        df_list.append(data)
+        data = pd.concat(df_list)
+
+    if data is None:
+        return None
+
+    data.set_index('timestamp', inplace=True)
 
     return data
 
