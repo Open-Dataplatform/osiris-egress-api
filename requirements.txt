@@ -6,3 +6,4 @@ azure-storage-file-datalake
 pandas
 numpy
 pydantic
+asyncio

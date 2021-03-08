@@ -51,7 +51,7 @@ class AzureCredential:  # pylint: disable=too-few-public-methods
         self.token = token
         self.expires_on = self.EXPIRES_IN + time.time()
 
-    def get_token(self, *scopes, **kwargs):  # pylint: disable=unused-argument
+    async def get_token(self, *scopes, **kwargs):  # pylint: disable=unused-argument
         """
         Returns an AcccesToken object.
         """

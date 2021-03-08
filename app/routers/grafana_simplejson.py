@@ -3,8 +3,9 @@ Implements endpoints which are required by the SimpleJson plugin for Grafana.
 """
 from datetime import datetime
 from http import HTTPStatus
-from typing import Dict, List
+from typing import Dict, List, Optional
 import json
+import asyncio
 
 import pandas as pd
 import numpy as np
@@ -14,7 +15,7 @@ from fastapi import APIRouter, HTTPException, Header
 from fastapi.security.api_key import APIKeyHeader
 from pandas import DataFrame
 
-from azure.storage.filedatalake import DataLakeDirectoryClient, DataLakeFileClient
+from azure.storage.filedatalake.aio import DataLakeDirectoryClient, DataLakeFileClient
 from azure.core.exceptions import ResourceNotFoundError
 
 from ..dependencies import Configuration, AzureCredential
@@ -50,7 +51,7 @@ async def search(guid: str, client_id: str = Header(None), client_secret: str = 
     logger.debug('Grafana search requested for GUID %s', guid)
 
     directory_client = __get_directory_client(guid, client_id, client_secret)
-    grafana_settings = __get_grafana_settings(directory_client)
+    grafana_settings = await __get_grafana_settings(directory_client)
 
     return grafana_settings['metrics']
 
@@ -70,13 +71,15 @@ async def query(guid: str, request: QueryRequest,
     from_date = pd.Timestamp(request.range['from']).to_pydatetime()
     to_date = pd.Timestamp(request.range['to']).to_pydatetime()
 
-    data_df = __retrieve_data(from_date, to_date, directory_client)
+    data_df = await __retrieve_data(from_date, to_date, directory_client)
     data_df = __filter_with_adhoc_filters(data_df, request.adhocFilters)
+
+    freq = f'{request.intervalMs}ms'
 
     results = []
     for target in request.targets:
         if target.type == 'timeseries':
-            results.extend(__dataframe_to_timeserie_response(data_df, target.target))
+            results.extend(__dataframe_to_timeserie_response(data_df, target.target, freq))
         else:
             results.extend(__dataframe_to_table_response(data_df))
 
@@ -101,7 +104,7 @@ async def tag_keys(guid: str, client_id: str = Header(None), client_secret: str 
     logger.debug('Grafana tag-keys requested for GUID %s', guid)
 
     directory_client = __get_directory_client(guid, client_id, client_secret)
-    grafana_settings = __get_grafana_settings(directory_client)
+    grafana_settings = await __get_grafana_settings(directory_client)
 
     return grafana_settings['tag_keys']
 
@@ -115,7 +118,7 @@ async def tag_values(guid: str, request: TagValuesRequest,
     logger.debug('Grafana tag-values requested for GUID %s', guid)
 
     directory_client = __get_directory_client(guid, client_id, client_secret)
-    grafana_settings = __get_grafana_settings(directory_client)
+    grafana_settings = await __get_grafana_settings(directory_client)
 
     return grafana_settings['tag_values'][request.key]
 
@@ -129,11 +132,15 @@ def __target_set_for_timeseries(targets):
     return True
 
 
-def __dataframe_to_timeserie_response(data_df: DataFrame, target: str) -> List[Dict]:
+def __dataframe_to_timeserie_response(data_df: DataFrame, target: str, freq: str) -> List[Dict]:
     response: List[Dict] = []
 
     if data_df is None or data_df.empty:
         return response
+
+    if freq is not None:
+        orig_tz = data_df.index.tz
+        data_df = data_df.tz_convert('UTC').resample(rule=freq, label='right', closed='right').mean().tz_convert(orig_tz)
 
     data_df = data_df[target]
 
@@ -220,75 +227,55 @@ def __arrange_time_range_in_dict(from_date: datetime, to_date: datetime) -> Dict
     return time_range_dict
 
 
-def __retrieve_data(from_date: datetime, to_date: datetime,
-                    directory_client: DataLakeDirectoryClient) -> DataFrame:
+async def __download_files(from_date: datetime, to_date: datetime,
+                           directory_client: DataLakeDirectoryClient) -> List:
 
-    data = __retrieve_data_from_storage(from_date, to_date, directory_client)
+    time_range = pd.date_range(from_date, to_date, freq='D')
+
+    async def download(timeslot: datetime, directory_client) -> Optional[str]:
+        path = f'year={timeslot.year}/month={timeslot.month:02d}/day={timeslot.day:02d}/data.json'
+
+        file_client: DataLakeFileClient = await __get_file_client(directory_client, path)
+        if not file_client:
+            return None
+
+        downloaded_file = await file_client.download_file()
+        file_json = pd.read_json(await downloaded_file.readall())
+
+        return file_json
+
+    res = await asyncio.gather(*[download(timeslot, directory_client) for timeslot in time_range])
+    return res
+
+
+async def __retrieve_data(from_date: datetime, to_date: datetime,
+                          directory_client: DataLakeDirectoryClient) -> DataFrame:
+
+    data = await __download_files(from_date, to_date, directory_client)
+
+    data = pd.concat(data)
 
     if data is not None:
         data.set_index('timestamp', inplace=True)
-        data = data[from_date: to_date]  # type: ignore
+        # data = data[from_date: to_date]  # type: ignore
 
     return data
 
 
-def __retrieve_data_from_storage(from_date: datetime, to_date: datetime,
-                                 directory_client: DataLakeDirectoryClient) -> DataFrame:
-
-    time_range_dict = __arrange_time_range_in_dict(from_date, to_date)
-
-    data = None
-    for year in time_range_dict:
-        year_dc = __get_sub_directory_client(directory_client, f'year={year}')
-        if not year_dc:
-            continue
-
-        for month in time_range_dict[year]:
-            month_dc = __get_sub_directory_client(year_dc, f'month={month:02d}')
-            if not month_dc:
-                continue
-
-            for day in time_range_dict[year][month]:
-                day_dc = __get_sub_directory_client(month_dc, f'day={day:02d}')
-                if not day_dc:
-                    continue
-
-                for hour in time_range_dict[year][month][day]:
-                    file_client: DataLakeFileClient = __get_file_client(day_dc, f'hour={hour}/data.json')
-                    if not file_client:
-                        continue
-
-                    file_df = pd.read_json(file_client.download_file().readall())
-                    data = pd.concat([data, file_df])
-
-                    if data is not None and data.size > 10000:
-                        return data
-
-    return data
-
-
-def __get_sub_directory_client(directory_client: DataLakeDirectoryClient, name: str):
-    sub_directory_client: DataLakeDirectoryClient = directory_client.get_sub_directory_client(name)
-    try:
-        sub_directory_client.get_directory_properties()
-    except ResourceNotFoundError:
-        return None
-
-    return sub_directory_client
-
-
-def __get_file_client(directory_client: DataLakeDirectoryClient, path):
+async def __get_file_client(directory_client: DataLakeDirectoryClient, path):
     file_client: DataLakeFileClient = directory_client.get_file_client(path)
     try:
-        file_client.get_file_properties()
+        await file_client.get_file_properties()
     except ResourceNotFoundError:
         return None
 
     return file_client
 
 
-def __get_grafana_settings(directory_client: DataLakeDirectoryClient) -> Dict:
-    settings_data = directory_client.get_file_client('grafana_settings.json').download_file().readall()
+async def __get_grafana_settings(directory_client: DataLakeDirectoryClient) -> Dict:
+    file_client = directory_client.get_file_client('grafana_settings.json')
+    downloaded_file = await file_client.download_file()
+    settings_data = await downloaded_file.readall()
     return json.loads(settings_data)
 
 
