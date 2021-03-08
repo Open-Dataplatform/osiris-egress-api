@@ -18,7 +18,7 @@ class Configuration:
 
     def __init__(self, name: str):
         self.config = configparser.ConfigParser()
-        self.config.read(['conf.ini', '/etc/osiris/conf.ini'])
+        self.config.read(['conf.ini', '/etc/osiris/conf.ini', '/etc/osiris-egress/conf.ini'])
 
         logging.config.fileConfig(fname=self.config['Logging']['configuration_file'], disable_existing_loggers=False)
 
