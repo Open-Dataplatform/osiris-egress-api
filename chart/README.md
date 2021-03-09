@@ -3,11 +3,8 @@
 ### Usage
 This chart comes unconfigured and will need to be configured with the following values to work.
 
-
-deployment:
+Undefined values:
 * ```deployment.image.repository```
-
-ingress:
 * ```ingress.host```
 
 There is also some values in the config file that needs to be configured for the application itself work propely, see [here](https://github.com/Open-Dataplatform/osiris-egress-api#configuration)
