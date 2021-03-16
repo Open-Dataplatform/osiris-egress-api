@@ -8,3 +8,4 @@ numpy
 pydantic
 asyncio
 aiohttp
+starlette_exporter

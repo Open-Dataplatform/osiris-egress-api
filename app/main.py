@@ -7,7 +7,7 @@ from typing import Dict
 from http import HTTPStatus
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-
+from starlette_exporter import PrometheusMiddleware, handle_metrics
 
 from .dependencies import Configuration
 from .routers import grafana_simplejson
@@ -30,6 +30,13 @@ app.add_middleware(
     allow_headers=['accept', 'content-type'],
 )
 
+app.add_middleware(
+    PrometheusMiddleware,
+    app_name=__name__,
+    group_paths=True
+)
+
+app.add_route('/metrics', handle_metrics)
 app.include_router(grafana_simplejson.router)
 
 
