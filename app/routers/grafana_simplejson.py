@@ -66,7 +66,7 @@ async def query(guid: str, request: QueryRequest,
     """
     logger.debug('Grafana query requested for GUID %s', guid)
 
-    if not __target_set_for_timeseries(request.targets):
+    if not __is_targets_set_for_all(request.targets):
         return []
 
     directory_client = await __get_directory_client(guid, client_id, client_secret)
@@ -74,16 +74,13 @@ async def query(guid: str, request: QueryRequest,
     to_date = pd.Timestamp(request.range['to']).to_pydatetime()
 
     data_df = await __retrieve_data(from_date, to_date, directory_client)
-    data_df = __filter_with_adhoc_filters(data_df, request.adhocFilters)
+    data_df = await __filter_with_adhoc_filters(directory_client, data_df, request.adhocFilters)
 
     freq = f'{request.intervalMs}ms'
 
     results = []
     for target in request.targets:
-        if target.type == 'timeseries':
-            results.extend(__dataframe_to_timeserie_response(data_df, target.target, freq))
-        else:
-            results.extend(__dataframe_to_table_response(data_df))
+        results.extend(__dataframe_to_response(data_df, target.type, target.target, freq))
 
     return results
 
@@ -122,41 +119,55 @@ async def tag_values(guid: str, request: TagValuesRequest,
     directory_client = await __get_directory_client(guid, client_id, client_secret)
     grafana_settings = await __get_grafana_settings(directory_client)
 
-    return grafana_settings['tag_values'][request.key]
+    if request.key in grafana_settings['tag_values']:
+        return grafana_settings['tag_values'][request.key]
+
+    return []
 
 
-def __target_set_for_timeseries(targets):
+def __is_targets_set_for_all(targets):
     for target in targets:
-        if target.type == 'timeseries':
-            if not target.target:
-                return False
+        if not target.target:
+            return False
 
     return True
 
 
-def __dataframe_to_timeserie_response(data_df: DataFrame, target: str, freq: str) -> List[Dict]:
+def __dataframe_to_response(data_df: DataFrame, target_type: str, target: str, freq: str) -> List[Dict]:
     response: List[Dict] = []
 
     if data_df is None or data_df.empty:
         return response
 
-    if freq is not None:
-        orig_tz = data_df.index.tz
-        data_df = data_df.tz_convert('UTC').resample(rule=freq, label='right', closed='right') \
-                         .mean().tz_convert(orig_tz)
+    if target != 'raw':
+        if freq is not None:
+            orig_tz = data_df.index.tz
+            data_df = data_df.tz_convert('UTC').resample(rule=freq, label='right', closed='right') \
+                             .mean().tz_convert(orig_tz)
 
-    data_df = data_df[target]
+        if target:
+            data_df = data_df[target]
 
-    response.append(__series_to_response(data_df, target))
+    data_df = data_df.replace({np.nan: None}).sort_index()
 
-    return response
+    if target_type == 'timeseries':
+        return __dataframe_to_timeserie_response(data_df, target)
+
+    return __dataframe_to_table_response(data_df)
+
+
+def __dataframe_to_timeserie_response(data_df: DataFrame, target: str) -> List[Dict]:
+    if data_df.empty:
+        return [{'target': target, 'datapoints': []}]
+
+    timestamps = (data_df.index.astype(np.int64) // 10 ** 6).values.tolist()
+    values = data_df.values.tolist()
+
+    return [{'target': target, 'datapoints': list(zip(values, timestamps))}]
 
 
 def __dataframe_to_table_response(data_df: DataFrame) -> List[Dict]:
     response: List[Dict] = []
-
-    if data_df is None or data_df.empty:
-        return response
 
     no_index_data_df = data_df.reset_index(level=0)
     response.append({'type': 'table',
@@ -164,17 +175,6 @@ def __dataframe_to_table_response(data_df: DataFrame) -> List[Dict]:
                      'rows': no_index_data_df.where(pd.notnull(no_index_data_df), None).values.tolist()})
 
     return response
-
-
-def __series_to_response(data_df: DataFrame, target: str) -> Dict:
-    if data_df.empty:
-        return {'target': target, 'datapoints': []}
-
-    sorted_data_df = data_df.dropna().sort_index()
-    timestamps = (sorted_data_df.index.astype(np.int64) // 10 ** 6).values.tolist()
-    values = sorted_data_df.values.tolist()
-
-    return {'target': target, 'datapoints': list(zip(values, timestamps))}
 
 
 def __get_access_token(client_id: str, client_secret: str) -> str:
@@ -293,8 +293,66 @@ async def __get_grafana_settings(directory_client: DataLakeDirectoryClient) -> D
     return json.loads(settings_data)
 
 
-def __filter_with_adhoc_filters(data_df: DataFrame, adhoc_filters: List):
+async def __filter_with_adhoc_filters(directory_client: DataLakeDirectoryClient,
+                                      data_df: DataFrame, adhoc_filters: List):
+    grafana_settings = await __get_grafana_settings(directory_client)
+
     for adhoc_filter in adhoc_filters:
-        data_df = data_df.loc[data_df[adhoc_filter.key] == adhoc_filter.value]
+        key_type = __find_key_type(grafana_settings['tag_keys'], adhoc_filter.key)
+
+        if key_type == "string":
+            data_df = await __filter_with_adhoc_filter_string(adhoc_filter, data_df)
+        elif key_type == "number":
+            data_df = await __filter_with_adhoc_filter_number(adhoc_filter, data_df)
+        else:
+            raise HTTPException(status_code=HTTPStatus.BAD_REQUEST,
+                                detail='Unknown key type. Supported types are "text" and "number"')
 
     return data_df
+
+
+async def __filter_with_adhoc_filter_number(adhoc_filter, data_df):
+    try:
+        value = float(adhoc_filter.value)
+    except Exception as error:
+        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST,
+                            detail='Value not a number') from error
+    if adhoc_filter.operator == "=":
+        data_df = data_df.loc[data_df[adhoc_filter.key] == value]
+    elif adhoc_filter.operator == "!=":
+        data_df = data_df.loc[data_df[adhoc_filter.key] != value]
+    elif adhoc_filter.operator == ">":
+        data_df = data_df.loc[data_df[adhoc_filter.key] > value]
+    elif adhoc_filter.operator == "<":
+        data_df = data_df.loc[data_df[adhoc_filter.key] < value]
+    else:
+        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail='Operator not supported for filter')
+    return data_df
+
+
+async def __filter_with_adhoc_filter_string(adhoc_filter, data_df):
+    if adhoc_filter.operator == "=":
+        data_df = data_df.loc[data_df[adhoc_filter.key] == adhoc_filter.value]
+    elif adhoc_filter.operator == "!=":
+        data_df = data_df.loc[data_df[adhoc_filter.key] != adhoc_filter.value]
+    elif adhoc_filter.operator == "=~" or adhoc_filter.operator == "!~":
+        try:
+            matches = data_df[adhoc_filter.key].str.match(adhoc_filter.value)
+            if adhoc_filter.operator == "!~":
+                matches = ~matches
+
+            data_df = data_df.loc[matches]
+        except Exception as error:
+            raise HTTPException(status_code=HTTPStatus.BAD_REQUEST,
+                                detail='Malformed regular expression') from error
+    else:
+        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail='Operator not supported for filter')
+    return data_df
+
+
+def __find_key_type(tags: List[Dict], tag_key):
+    for tag in tags:
+        if tag['text'] == tag_key:
+            return tag['type']
+
+    raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail='Unknown key')
