@@ -139,7 +139,10 @@ def __dataframe_to_response(data_df: DataFrame, target_type: str, target: str, f
     if data_df is None or data_df.empty:
         return response
 
-    if target != 'raw':
+    if target == 'Raw' and target_type == 'timeseries':
+        return response
+
+    if target != 'Raw':
         if freq is not None:
             orig_tz = data_df.index.tz
             data_df = data_df.tz_convert('UTC').resample(rule=freq, label='right', closed='right') \
