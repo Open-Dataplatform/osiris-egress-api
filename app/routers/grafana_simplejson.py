@@ -139,6 +139,8 @@ def __dataframe_to_response(data_df: DataFrame, target_type: str, target: str, f
     if data_df is None or data_df.empty:
         return response
 
+    # The target value Raw is not part of the valid metrics. It's purpose is to return data as it is stored
+    # on the filesystem. The Raw value only makes sense for the "table" panel in Grafana.
     if target == 'Raw' and target_type == 'timeseries':
         return response
 
