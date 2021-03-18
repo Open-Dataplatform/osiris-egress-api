@@ -1,6 +1,7 @@
 # osiris-egress-api <!-- omit in toc -->
+- [Endpoint documentation](#endpoint-documentation)
+  - [Location](#location)
 - [Grafana SimpleJson](#grafana-simplejson)
-  
 - [Data application registration](#data-application-registration)
   - [Prerequisites](#prerequisites)
   - [Steps](#steps)
@@ -10,22 +11,37 @@
 - [Configuration](#configuration)
   - [Logging](#logging)
 - [Development](#development)
+  - [Running locally](#running-locally)
   - [tox](#tox)
   - [Commands](#commands)
     - [Linting](#linting)
     - [Tests](#tests)
-    
+  
+## Endpoint documentation
+Generated endpoint documentation can be viewed from the endpoints /docs and /redoc on the running application.
+
+Please refer to the generated docs regarding request validation and errors.
+
+All the endpoints are based on specifying a GUID-resource. Substitute the {guid} placeholders with the ID of 
+the DataCatalog dataset or the Azure Storage Account directory you want to retrieve data from.
+
+### Location of ingressed data
+The application requires that the data to be retrieved from storage is partitioned into the following 
+file structure and filename with regards to the timestamp for the data:
+```
+{guid}/year={now.year:02d}/month={now.month:02d}/day={now.day:02d}/data.json
+```
 
 ## Grafana SimpleJson
-The Osiris Egress API supports the [SimpleJson plugin](https://grafana.com/grafana/plugins/grafana-simple-json-datasource)
-for Grafana. You can connect to a backend running the API in the following way. When you add a new data source you have to chose 
-either the SimpleJson or Json plugin. In the URL path add the hostname and port and the path GUID:
+The Osiris Egress API supports the [JSON plugin](https://grafana.com/grafana/plugins/simpod-json-datasource/)
+for Grafana. You can connect to a backend running the API in the following way. When you add a new data source you have 
+to chose JSON plugin. In the URL path add the hostname, port and the GUID:
 
 ```
 URL: https://<hostname>:<port>/<GUID>
 ```
 
-Choose **Server (default)** from the dropdown menu as **Access**. Add two custom HTTP headers with values 
+Choose `Server (default)` from the dropdown menu as `Access`. Add two custom HTTP headers with values 
 corresponding to your app registration in Azure:
 
 ```
@@ -36,7 +52,8 @@ client-secret = <client_secret>
 
 ## Data application registration
 
-An App Registration with credentials are required to upload data to the Data Platform through the Osiris Egress API.
+An App Registration with credentials are required to retrieve data from the DataPlatform through the 
+Osiris Egress API.
 
 ### Prerequisites
 
@@ -96,8 +113,9 @@ Add the application you created earlier, using the `<YOUR APP NAME>` name, to th
 
 ## Configuration
 
-The application needs a configuration file *conf.ini* (see *conf.example.ini*). This file must 
-be place in the root of the project or in the location */etc/osiris/conf.ini*.
+The application needs a configuration file `conf.ini` (see `conf.example.ini`). This file must 
+be placed in the root of the project or in the locations `/etc/osiris/conf.ini` or 
+`/etc/osiris-egress/conf.ini`.
 
 ```
 [Logging]
@@ -117,9 +135,10 @@ scopes = https://storage.azure.com/.default
 ```
 
 ### Logging
-Logging can be controlled by defining handlers and formatters using [Logging Configuration](https://docs.python.org/3/library/logging.config.html). 
-The location of the log configuration file (*log_configuration_file *) must be defined in the configuration file of the application. Here is an example configuration:
+Logging can be controlled by defining handlers and formatters using [Logging Configuration](https://docs.python.org/3/library/logging.config.html) and specifically the [config fileformat](https://docs.python.org/3/library/logging.config.html#logging-config-fileformat). 
+The location of the log configuration file (`Logging.configuration_file`) must be defined in the configuration file of the application as mentioned above.
 
+Here is an example configuration:
 ```
 [loggers]
 keys=root,main
@@ -159,6 +178,15 @@ format=%(levelname)s: %(name)s - %(message)s
 ```
 
 ## Development
+
+### Running locally
+The application can be run locally by using a supported application server, for example `uvicorn`.
+
+The following commands will install `uvicorn` and start serving the application locally.
+```
+pip install uvicorn==0.13.3
+uvicorn app.main:app --reload
+```
 
 ### tox
 
