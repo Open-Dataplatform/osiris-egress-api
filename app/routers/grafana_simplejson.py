@@ -276,7 +276,7 @@ async def __retrieve_data(from_date: datetime, to_date: datetime,
     if data is None:
         return None
 
-    data.set_index('timestamp', inplace=True)
+    data.set_index('datetime', inplace=True)
 
     return data
 
