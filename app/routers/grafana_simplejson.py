@@ -143,7 +143,7 @@ def __dataframe_to_response(data_df: DataFrame, target_type: str, target: str,
     target_return_name = ''
     for metric, value in additional_filters.items():
         data_df = data_df[data_df[metric] == value]
-        target_return_name += metric + '_'
+        target_return_name += value + '_'
     target_return_name += target
 
     # The target value Raw is not part of the valid metrics. It's purpose is to return data as it is stored
