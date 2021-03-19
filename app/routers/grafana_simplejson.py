@@ -80,7 +80,7 @@ async def query(guid: str, request: QueryRequest,
 
     results = []
     for target in request.targets:
-        results.extend(__dataframe_to_response(data_df, target.type, target.target, freq))
+        results.extend(__dataframe_to_response(data_df, target.type, target.target, target.data, freq))
 
     return results
 
@@ -133,11 +133,15 @@ def __is_targets_set_for_all(targets):
     return True
 
 
-def __dataframe_to_response(data_df: DataFrame, target_type: str, target: str, freq: str) -> List[Dict]:
+def __dataframe_to_response(data_df: DataFrame, target_type: str, target: str,
+                            additional_filters: Dict, freq: str) -> List[Dict]:
     response: List[Dict] = []
 
     if data_df is None or data_df.empty:
         return response
+
+    for metric, value in additional_filters.items():
+        data_df = data_df[data_df[metric] == value]
 
     # The target value Raw is not part of the valid metrics. It's purpose is to return data as it is stored
     # on the filesystem. The Raw value only makes sense for the "table" panel in Grafana.

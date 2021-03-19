@@ -13,6 +13,7 @@ class Target(BaseModel):
     refId: str
     target: str
     type: str
+    data: Dict
 
 
 class AdhocFilter(BaseModel):
