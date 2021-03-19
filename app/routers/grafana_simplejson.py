@@ -140,8 +140,11 @@ def __dataframe_to_response(data_df: DataFrame, target_type: str, target: str,
     if data_df is None or data_df.empty:
         return response
 
+    target_return_name = ''
     for metric, value in additional_filters.items():
         data_df = data_df[data_df[metric] == value]
+        target_return_name += metric + '_'
+    target_return_name += target
 
     # The target value Raw is not part of the valid metrics. It's purpose is to return data as it is stored
     # on the filesystem. The Raw value only makes sense for the "table" panel in Grafana.
@@ -160,19 +163,19 @@ def __dataframe_to_response(data_df: DataFrame, target_type: str, target: str,
     data_df = data_df.replace({np.nan: None}).sort_index()
 
     if target_type == 'timeseries':
-        return __dataframe_to_timeserie_response(data_df, target)
+        return __dataframe_to_timeserie_response(data_df, target_return_name)
 
     return __dataframe_to_table_response(data_df)
 
 
-def __dataframe_to_timeserie_response(data_df: DataFrame, target: str) -> List[Dict]:
+def __dataframe_to_timeserie_response(data_df: DataFrame, target_return_name: str) -> List[Dict]:
     if data_df.empty:
-        return [{'target': target, 'datapoints': []}]
+        return [{'target': target_return_name, 'datapoints': []}]
 
     timestamps = (data_df.index.astype(np.int64) // 10 ** 6).values.tolist()
     values = data_df.values.tolist()
 
-    return [{'target': target, 'datapoints': list(zip(values, timestamps))}]
+    return [{'target': target_return_name, 'datapoints': list(zip(values, timestamps))}]
 
 
 def __dataframe_to_table_response(data_df: DataFrame) -> List[Dict]:
