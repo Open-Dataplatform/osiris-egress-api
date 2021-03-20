@@ -142,8 +142,11 @@ def __dataframe_to_response(data_df: DataFrame, target_type: str, target: str,
 
     target_return_name = ''
     for metric, value in additional_filters.items():
-        data_df = data_df[data_df[metric] == value]
-        target_return_name += value + '_'
+        try:
+            data_df = data_df[data_df[metric] == value]
+            target_return_name += value + '_'
+        except KeyError:
+            continue
     target_return_name += target
 
     # The target value Raw is not part of the valid metrics. It's purpose is to return data as it is stored
@@ -267,7 +270,7 @@ def __split_into_chunks(lst, chunk_size):
 async def __retrieve_data(from_date: datetime, to_date: datetime,
                           directory_client: DataLakeDirectoryClient) -> Optional[DataFrame]:
 
-    time_range = pd.date_range(from_date, to_date, freq='D')
+    time_range = pd.date_range(from_date.strftime("%Y-%m-%d"), to_date.strftime("%Y-%m-%d"), freq='D')
 
     data = None
     # We need to divide the timeslots into chunks so we don't hit the limit of asyncio.gather.
