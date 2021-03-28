@@ -5,6 +5,14 @@ deployment:
   image:
     repository: <IMAGENAME>
     tag: latest
+  livenessProbe:
+    path: /
+    initialDelaySeconds: 15
+    timeoutSeconds: 2
+  readinessProbe:
+    path: /
+    initialDelaySeconds: 15
+    timeoutSeconds: 2
 
 service:
   type: ClusterIP
@@ -32,11 +40,10 @@ config:
 
     [Azure Storage]
     account_url = https://<storage_name>.dfs.core.windows.net/
-    file_system_name = <container_name>
+    filesystem_name = <container_name>
 
     [Azure Authentication]
-    authority = https://login.microsoftonline.com/<tenant_name>
-    scopes = https://storage.azure.com/.default
+    tenant_id = <tenant_id>
   log.conf: |
     [loggers]
     keys=root,main
