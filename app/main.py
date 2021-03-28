@@ -10,8 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette_exporter import PrometheusMiddleware, handle_metrics
 
 from .dependencies import Configuration
-from .routers import grafana_simplejson
-
+from .routers import grafana_simplejson, downloads
 
 configuration = Configuration(__file__)
 config = configuration.get_config()
@@ -38,6 +37,7 @@ app.add_middleware(
 
 app.add_route('/metrics', handle_metrics)
 app.include_router(grafana_simplejson.router)
+app.include_router(downloads.router)
 
 
 @app.get('/', status_code=HTTPStatus.OK)

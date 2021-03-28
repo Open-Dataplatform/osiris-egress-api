@@ -10,15 +10,15 @@ import asyncio
 import pandas as pd
 import numpy as np
 
-import msal
 from fastapi import APIRouter, HTTPException, Header
 from fastapi.security.api_key import APIKeyHeader
+from osiris.azure_client_authorization import ClientAuthorization
 from pandas import DataFrame
 
 from azure.storage.filedatalake.aio import DataLakeDirectoryClient, DataLakeFileClient
 from azure.core.exceptions import ResourceNotFoundError
 
-from ..dependencies import Configuration, AzureCredential
+from ..dependencies import Configuration
 from ..schemas.simplejson_request import QueryRequest, TagValuesRequest
 
 configuration = Configuration(__file__)
@@ -27,13 +27,13 @@ logger = configuration.get_logger()
 
 api_key_header = APIKeyHeader(name='Authorization', auto_error=True)
 
-router = APIRouter(tags=['Grafana'])
+router = APIRouter(tags=['grafana'])
 
 
-@router.get('/{guid}', status_code=HTTPStatus.OK)
+@router.get('/grafana/{guid}', status_code=HTTPStatus.OK)
 async def test_connection(guid: str, client_id: str = Header(None), client_secret: str = Header(None)):
     """
-    Endpoint for Grafana connectivity test. This is checks if the GUID folder exist and the client_id
+    Endpoint for Grafana connectivity test. This checks if the GUID folder exist and the client_id
     and client_secret are valid.
     """
     logger.debug('Grafana root requested for GUID %s', guid)
@@ -43,7 +43,7 @@ async def test_connection(guid: str, client_id: str = Header(None), client_secre
     return {'message': 'Grafana datasource used for timeseries data.'}
 
 
-@router.post('/{guid}/search', status_code=HTTPStatus.OK)
+@router.post('/grafana/{guid}/search', status_code=HTTPStatus.OK)
 async def search(guid: str, client_id: str = Header(None), client_secret: str = Header(None)):
     """
     Returns the valid metrics.
@@ -58,7 +58,7 @@ async def search(guid: str, client_id: str = Header(None), client_secret: str = 
     return metrics
 
 
-@router.post('/{guid}/query', status_code=HTTPStatus.OK)
+@router.post('/grafana/{guid}/query', status_code=HTTPStatus.OK)
 async def query(guid: str, request: QueryRequest,
                 client_id: str = Header(None), client_secret: str = Header(None)) -> List[Dict]:
     """
@@ -85,7 +85,7 @@ async def query(guid: str, request: QueryRequest,
     return results
 
 
-@router.post('/{guid}/annotations', status_code=HTTPStatus.OK)
+@router.post('/grafana/{guid}/annotations', status_code=HTTPStatus.OK)
 async def annotation(guid: str) -> List:
     """
     Returns empty list of annotations.
@@ -95,7 +95,7 @@ async def annotation(guid: str) -> List:
     return []
 
 
-@router.post('/{guid}/tag-keys', status_code=HTTPStatus.OK)
+@router.post('/grafana/{guid}/tag-keys', status_code=HTTPStatus.OK)
 async def tag_keys(guid: str, client_id: str = Header(None), client_secret: str = Header(None)) -> List:
     """
     Returns list of tag-keys.
@@ -108,7 +108,7 @@ async def tag_keys(guid: str, client_id: str = Header(None), client_secret: str 
     return grafana_settings['tag_keys']
 
 
-@router.post('/{guid}/tag-values', status_code=HTTPStatus.OK)
+@router.post('/grafana/{guid}/tag-values', status_code=HTTPStatus.OK)
 async def tag_values(guid: str, request: TagValuesRequest,
                      client_id: str = Header(None), client_secret: str = Header(None)) -> List:
     """
@@ -192,30 +192,15 @@ def __dataframe_to_table_response(data_df: DataFrame) -> List[Dict]:
     return response
 
 
-def __get_access_token(client_id: str, client_secret: str) -> str:
-    authority = config['Azure Authentication']['authority']
-    scopes = config['Azure Authentication']['scopes'].split()
-
-    confidential_client = msal.ConfidentialClientApplication(
-        client_id=client_id,
-        authority=authority,
-        client_credential=client_secret
-    )
-
-    result = confidential_client.acquire_token_silent(scopes, account=None)
-
-    if not result:
-        result = confidential_client.acquire_token_for_client(scopes=scopes)
-
-    return result['access_token']
-
-
 async def __get_directory_client(guid: str, client_id: str, client_secret: str) -> DataLakeDirectoryClient:
+    tenant_id = config['Azure Authentication']['tenant_id']
     account_url = config['Azure Storage']['account_url']
-    file_system_name = config['Azure Storage']['file_system_name']
-    credential = AzureCredential(__get_access_token(client_id, client_secret))
+    filesystem_name = config['Azure Storage']['filesystem_name']
 
-    directory_client = DataLakeDirectoryClient(account_url, file_system_name, guid, credential=credential)
+    client_auth = ClientAuthorization(tenant_id, client_id, client_secret)
+    credential = client_auth.get_credential_async()
+
+    directory_client = DataLakeDirectoryClient(account_url, filesystem_name, guid, credential=credential)
     try:
         await directory_client.get_directory_properties()  # Test if the directory exist otherwise return error.
     except ResourceNotFoundError as error:

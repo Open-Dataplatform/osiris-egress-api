@@ -1,6 +1,5 @@
 fastapi
 requests
-msal
 azure-core
 azure-storage-file-datalake
 pandas
@@ -9,3 +8,4 @@ pydantic
 asyncio
 aiohttp
 starlette_exporter
+osiris-sdk

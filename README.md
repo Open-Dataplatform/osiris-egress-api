@@ -25,11 +25,11 @@ Please refer to the generated docs regarding request validation and errors.
 All the endpoints are based on specifying a GUID-resource. Substitute the {guid} placeholders with the ID of 
 the DataCatalog dataset or the Azure Storage Account directory you want to retrieve data from.
 
-### Location of ingressed data
+### Location of egressed data
 The application requires that the data to be retrieved from storage is partitioned into the following 
-file structure and filename with regards to the timestamp for the data:
+file structure with regards to the event time for the data:
 ```
-{guid}/year={now.year:02d}/month={now.month:02d}/day={now.day:02d}/data.json
+{guid}/year={now.year:02d}/month={now.month:02d}/day={now.day:02d}/
 ```
 
 ## Grafana SimpleJson
@@ -38,7 +38,7 @@ for Grafana. You can connect to a backend running the API in the following way. 
 to chose JSON plugin. In the URL path add the hostname, port and the GUID:
 
 ```
-URL: https://<hostname>:<port>/<GUID>
+URL: https://<hostname>:<port>/grafana/<GUID>
 ```
 
 Choose `Server (default)` from the dropdown menu as `Access`. Add two custom HTTP headers with values 
