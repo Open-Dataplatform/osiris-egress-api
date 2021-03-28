@@ -9,6 +9,7 @@ deployment:
     path: /
     initialDelaySeconds: 15
     timeoutSeconds: 2
+    periodSeconds: 60
   readinessProbe:
     path: /
     initialDelaySeconds: 15

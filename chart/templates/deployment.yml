@@ -41,6 +41,7 @@ spec:
           port: 80
         initialDelaySeconds: {{ .Values.deployment.livenessProbe.initialDelaySeconds }}
         timeoutSeconds: {{ .Values.deployment.livenessProbe.timeoutSeconds }}
+        periodSeconds: {{ .Values.deployment.livenessProbe.periodSeconds }}
       readinessProbe:
         httpGet:
           path: {{ .Values.deployment.readinessProbe.path }}
