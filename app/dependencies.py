@@ -6,6 +6,7 @@ from configparser import ConfigParser
 import logging.config
 from logging import Logger
 
+
 class Configuration:
     """
     Contains methods to obtain configurations for this application.
@@ -30,4 +31,3 @@ class Configuration:
         A customized logger.
         """
         return logging.getLogger(self.name)
-
