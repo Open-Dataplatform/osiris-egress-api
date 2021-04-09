@@ -18,6 +18,8 @@ from pandas import DataFrame
 from azure.storage.filedatalake.aio import DataLakeDirectoryClient, DataLakeFileClient
 from azure.core.exceptions import ResourceNotFoundError
 
+from prometheus_client import Info
+
 from ..dependencies import Configuration
 from ..schemas.simplejson_request import QueryRequest, TagValuesRequest
 
@@ -29,6 +31,13 @@ api_key_header = APIKeyHeader(name='Authorization', auto_error=True)
 
 router = APIRouter(tags=['grafana'])
 
+TEST_CONNECTION_GUID_INFO = Info('test_connection_guid', 'test connection guid')
+SEARCH_GUID_INFO = Info('search_guid', 'search guid')
+QUERY_GUID_INFO = Info('query_guid', 'query guid')
+ANNOTATION_GUID_INFO = Info('annotation_guid', 'annotation guid')
+TAG_KEYS_GUID_INFO = Info('tag_keys_guid', 'tag keys guid')
+TAG_VALUES_GUID_INFO = Info('tag_values_guid', 'tag values guid')
+
 
 @router.get('/grafana/{guid}', status_code=HTTPStatus.OK)
 async def test_connection(guid: str, client_id: str = Header(None), client_secret: str = Header(None)):
@@ -37,6 +46,7 @@ async def test_connection(guid: str, client_id: str = Header(None), client_secre
     and client_secret are valid.
     """
     logger.debug('Grafana root requested for GUID %s', guid)
+    TEST_CONNECTION_GUID_INFO.info({'guid': guid})
 
     await __get_directory_client(guid, client_id, client_secret)
 
@@ -49,6 +59,7 @@ async def search(guid: str, client_id: str = Header(None), client_secret: str = 
     Returns the valid metrics.
     """
     logger.debug('Grafana search requested for GUID %s', guid)
+    SEARCH_GUID_INFO.info({'guid': guid})
 
     directory_client = await __get_directory_client(guid, client_id, client_secret)
     grafana_settings = await __get_grafana_settings(directory_client)
@@ -65,6 +76,7 @@ async def query(guid: str, request: QueryRequest,
     Returns the data based on time range and target metric.
     """
     logger.debug('Grafana query requested for GUID %s', guid)
+    QUERY_GUID_INFO.info({'guid': guid})
 
     if not __is_targets_set_for_all(request.targets):
         return []
@@ -91,6 +103,7 @@ async def annotation(guid: str) -> List:
     Returns empty list of annotations.
     """
     logger.debug('Grafana annotations requested for GUID %s', guid)
+    ANNOTATION_GUID_INFO.info({'guid': guid})
 
     return []
 
@@ -101,6 +114,7 @@ async def tag_keys(guid: str, client_id: str = Header(None), client_secret: str 
     Returns list of tag-keys.
     """
     logger.debug('Grafana tag-keys requested for GUID %s', guid)
+    TAG_KEYS_GUID_INFO.info({'guid': guid})
 
     directory_client = await __get_directory_client(guid, client_id, client_secret)
     grafana_settings = await __get_grafana_settings(directory_client)
@@ -115,6 +129,7 @@ async def tag_values(guid: str, request: TagValuesRequest,
     Returns list of tag values corresponding to request key.
     """
     logger.debug('Grafana tag-values requested for GUID %s', guid)
+    TAG_VALUES_GUID_INFO.info({'guid': guid})
 
     directory_client = await __get_directory_client(guid, client_id, client_secret)
     grafana_settings = await __get_grafana_settings(directory_client)
