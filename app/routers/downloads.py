@@ -45,11 +45,9 @@ async def download_json_file(guid: str,
         directory_client = filesystem_client.get_directory_client(guid)
         __check_directory_exist(directory_client)
         path = f'year={file_date.year:02d}/month={file_date.month:02d}/day={file_date.day:02d}/data.json'
-        print(type(file_date), file_date, path)
         stream = __download_file(path, directory_client)
 
         return StreamingResponse(stream.chunks(), media_type='application/octet-stream')
-    
 
 
 @router.get('/{guid}', response_class=StreamingResponse)
@@ -69,7 +67,6 @@ async def download_file(guid: str,
         __check_directory_exist(directory_client)
         path = __get_path_for_generic_file(file_date, guid, filesystem_client)
         stream = __download_file(path, directory_client)
-        print(path)
 
         return StreamingResponse(stream.chunks(), media_type='application/octet-stream')
 
