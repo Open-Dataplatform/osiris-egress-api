@@ -26,8 +26,7 @@ access_token_header = APIKeyHeader(name='Authorization', auto_error=True)
 
 router = APIRouter(tags=['downloads'])
 
-DOWNLOAD_JSON_FILE_GUID_COUNTER = Counter('download_json_file_guid', 'download json file guid', ['guid'])
-DOWNLOAD_FILE_GUID_COUNTER = Counter('download_file_guid', 'download file guid', ['guid'])
+DOWNLOADS_GUID_COUNTER = Counter('download_guid', 'count guid', ['method', 'guid'])
 
 
 @router.get('/{guid}/json', response_class=StreamingResponse)
@@ -39,7 +38,7 @@ async def download_json_file(guid: str,
     stored in {guid}/year={date.year:02d}/month={date.month:02d}/day={date.day:02d}/data.json'.
     """
     logger.debug('download json file requested')
-    DOWNLOAD_JSON_FILE_GUID_COUNTER.labels(guid).inc()
+    DOWNLOADS_GUID_COUNTER.labels(download_json_file.__name__, guid).inc()
 
     with __get_filesystem_client(token) as filesystem_client:
         directory_client = filesystem_client.get_directory_client(guid)
@@ -60,7 +59,7 @@ async def download_file(guid: str,
     any assumption about the filename and file extension.
     """
     logger.debug('download file requested')
-    DOWNLOAD_FILE_GUID_COUNTER.labels(guid).inc()
+    DOWNLOADS_GUID_COUNTER.labels(download_file.__name__, guid).inc()
 
     with __get_filesystem_client(token) as filesystem_client:
         directory_client = filesystem_client.get_directory_client(guid)
