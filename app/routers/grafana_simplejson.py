@@ -9,7 +9,6 @@ import asyncio
 
 import pandas as pd
 import numpy as np
-import time
 
 from fastapi import APIRouter, HTTPException, Header
 from fastapi.security.api_key import APIKeyHeader
@@ -19,7 +18,7 @@ from pandas import DataFrame
 from azure.storage.filedatalake.aio import DataLakeDirectoryClient, DataLakeFileClient
 from azure.core.exceptions import ResourceNotFoundError
 
-from prometheus_client import Counter, Summary, Histogram
+from prometheus_client import Counter
 
 from ..dependencies import Configuration, Metric
 from ..schemas.simplejson_request import QueryRequest, TagValuesRequest
@@ -31,70 +30,47 @@ logger = configuration.get_logger()
 api_key_header = APIKeyHeader(name='Authorization', auto_error=True)
 
 router = APIRouter(tags=['grafana'])
-metric = Metric()
-
-GRAFANA_SIMPLEJSON_GUID_COUNTER = Counter('grafana_simplejson_guid', 'count guid', ['method', 'guid'])
-GRAFANA_SIMPLEJSON_RESPONSE_TIME_GUID_HISTOGRAM = Histogram('grafana_simplejson_response_time_guid', 'response time with guid', ['method', 'guid'])
 
 
 @router.get('/grafana/{guid}', status_code=HTTPStatus.OK)
-@metric.decorator_test
+@Metric.count_and_histogram
 async def test_connection(guid: str, client_id: str = Header(None), client_secret: str = Header(None)):
     """
     Endpoint for Grafana connectivity test. This checks if the GUID folder exist and the client_id
     and client_secret are valid.
     """
-    start_time = time.time()
 
     logger.debug('Grafana root requested for GUID %s', guid)
-    GRAFANA_SIMPLEJSON_GUID_COUNTER.labels(test_connection.__name__, guid).inc()
 
     await __get_directory_client(guid, client_id, client_secret)
-
-    time_taken = time.time() - start_time
-    '''
-    print(time_taken)
-
-    import random
-    guid_test = list('ABCDEFGH')
-    guid_test = guid_test[random.randrange(len(guid_test))]
-    guid = guid_test
-    '''
-    GRAFANA_SIMPLEJSON_RESPONSE_TIME_GUID_HISTOGRAM.labels(test_connection.__name__, guid).observe(time_taken)
 
     return {'message': 'Grafana datasource used for timeseries data.'}
 
 
 @router.post('/grafana/{guid}/search', status_code=HTTPStatus.OK)
+@Metric.count_and_histogram
 async def search(guid: str, client_id: str = Header(None), client_secret: str = Header(None)):
     """
     Returns the valid metrics.
     """
-    start_time = time.time()
-
     logger.debug('Grafana search requested for GUID %s', guid)
-    GRAFANA_SIMPLEJSON_GUID_COUNTER.labels(search.__name__, guid).inc()
 
     directory_client = await __get_directory_client(guid, client_id, client_secret)
     grafana_settings = await __get_grafana_settings(directory_client)
     metrics = grafana_settings['metrics']
     metrics.sort()
 
-    time_taken = time.time() - start_time
-
-    GRAFANA_SIMPLEJSON_RESPONSE_TIME_GUID_HISTOGRAM.labels(search.__name__, guid).observe(time_taken)
-
     return metrics
 
 
 @router.post('/grafana/{guid}/query', status_code=HTTPStatus.OK)
+@Metric.count_and_histogram
 async def query(guid: str, request: QueryRequest,
                 client_id: str = Header(None), client_secret: str = Header(None)) -> List[Dict]:
     """
     Returns the data based on time range and target metric.
     """
     logger.debug('Grafana query requested for GUID %s', guid)
-    GRAFANA_SIMPLEJSON_GUID_COUNTER.labels(query.__name__, guid).inc()
 
     if not __is_targets_set_for_all(request.targets):
         return []
@@ -116,23 +92,23 @@ async def query(guid: str, request: QueryRequest,
 
 
 @router.post('/grafana/{guid}/annotations', status_code=HTTPStatus.OK)
+@Metric.count_and_histogram
 async def annotation(guid: str) -> List:
     """
     Returns empty list of annotations.
     """
     logger.debug('Grafana annotations requested for GUID %s', guid)
-    GRAFANA_SIMPLEJSON_GUID_COUNTER.labels(annotation.__name__, guid).inc()
 
     return []
 
 
 @router.post('/grafana/{guid}/tag-keys', status_code=HTTPStatus.OK)
+@Metric.count_and_histogram
 async def tag_keys(guid: str, client_id: str = Header(None), client_secret: str = Header(None)) -> List:
     """
     Returns list of tag-keys.
     """
     logger.debug('Grafana tag-keys requested for GUID %s', guid)
-    GRAFANA_SIMPLEJSON_GUID_COUNTER.labels(tag_keys.__name__, guid).inc()
 
     directory_client = await __get_directory_client(guid, client_id, client_secret)
     grafana_settings = await __get_grafana_settings(directory_client)
@@ -141,13 +117,13 @@ async def tag_keys(guid: str, client_id: str = Header(None), client_secret: str 
 
 
 @router.post('/grafana/{guid}/tag-values', status_code=HTTPStatus.OK)
+@Metric.count_and_histogram
 async def tag_values(guid: str, request: TagValuesRequest,
                      client_id: str = Header(None), client_secret: str = Header(None)) -> List:
     """
     Returns list of tag values corresponding to request key.
     """
     logger.debug('Grafana tag-values requested for GUID %s', guid)
-    GRAFANA_SIMPLEJSON_GUID_COUNTER.labels(tag_values.__name__, guid).inc()
 
     directory_client = await __get_directory_client(guid, client_id, client_secret)
     grafana_settings = await __get_grafana_settings(directory_client)

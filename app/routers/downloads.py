@@ -13,10 +13,7 @@ from azure.core.exceptions import ResourceNotFoundError
 from azure.storage.filedatalake import DataLakeDirectoryClient, FileSystemClient, StorageStreamDownloader
 from osiris.azure_client_authorization import AzureCredential
 
-from prometheus_client import Counter
-
-from ..dependencies import Configuration
-
+from ..dependencies import Configuration, Metric
 
 configuration = Configuration(__file__)
 config = configuration.get_config()
@@ -26,10 +23,9 @@ access_token_header = APIKeyHeader(name='Authorization', auto_error=True)
 
 router = APIRouter(tags=['downloads'])
 
-DOWNLOADS_GUID_COUNTER = Counter('download_guid', 'count guid', ['method', 'guid'])
-
 
 @router.get('/{guid}/json', response_class=StreamingResponse)
+@Metric.count_and_histogram
 async def download_json_file(guid: str,
                              file_date: date = datetime.utcnow().date(),
                              token: str = Security(access_token_header)) -> StreamingResponse:
@@ -38,7 +34,6 @@ async def download_json_file(guid: str,
     stored in {guid}/year={date.year:02d}/month={date.month:02d}/day={date.day:02d}/data.json'.
     """
     logger.debug('download json file requested')
-    DOWNLOADS_GUID_COUNTER.labels(download_json_file.__name__, guid).inc()
 
     with __get_filesystem_client(token) as filesystem_client:
         directory_client = filesystem_client.get_directory_client(guid)
@@ -50,6 +45,7 @@ async def download_json_file(guid: str,
 
 
 @router.get('/{guid}', response_class=StreamingResponse)
+@Metric.count_and_histogram
 async def download_file(guid: str,
                         file_date: date = datetime.utcnow().date(),
                         token: str = Security(access_token_header)) -> StreamingResponse:
@@ -59,7 +55,6 @@ async def download_file(guid: str,
     any assumption about the filename and file extension.
     """
     logger.debug('download file requested')
-    DOWNLOADS_GUID_COUNTER.labels(download_file.__name__, guid).inc()
 
     with __get_filesystem_client(token) as filesystem_client:
         directory_client = filesystem_client.get_directory_client(guid)

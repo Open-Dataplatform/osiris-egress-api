@@ -4,7 +4,11 @@ Contains dependencies used in several places of the application.
 import configparser
 from configparser import ConfigParser
 import logging.config
+import time
 from logging import Logger
+from functools import wraps
+
+from prometheus_client import Histogram, Counter
 
 
 class Configuration:
@@ -34,10 +38,26 @@ class Configuration:
 
 
 class Metric:
+    """
+    Class to wrap all metrics for prometheus.
+    """
+    HISTOGRAM = Histogram('osiris_egress_api', 'Osiris Egress API (method, guid, time)', ['method', 'guid'])
+    COUNTER = Counter('osiris_egress_api_method_counter', 'Osiris Egress API counter (method, guid)', ['method', 'guid'])
+
     @staticmethod
-    def decorator_test(func):
-        def wrapper(*args, **kwargs):
-            print("before")
-            func(*args, **kwargs)
-            print('after')
+    def count_and_histogram(func):
+        """
+        Decorator method for metrics on count and histogram
+        """
+        @wraps(func)
+        async def wrapper(*args, **kwargs):
+            start_time = time.time()
+
+            result = await func(*args, **kwargs)
+
+            time_taken = time.time() - start_time
+            Metric.HISTOGRAM.labels(func.__name__, kwargs['guid']).observe(time_taken)
+            Metric.COUNTER.labels(func.__name__, kwargs['guid']).inc()
+            return result
+
         return wrapper
