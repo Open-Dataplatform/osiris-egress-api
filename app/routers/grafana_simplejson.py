@@ -40,8 +40,6 @@ async def test_connection(guid: str, client_id: str = Header(None), client_secre
     Endpoint for Grafana connectivity test. This checks if the GUID folder exist and the client_id
     and client_secret are valid.
     """
-    print('----------(PRINT) TEST_CONNECTION ABCDEFGH-----------')
-    logger.error('----------(ERROR) TEST_CONNECTION ABCDEFGH-----------')
     logger.debug('Grafana root requested for GUID %s', guid)
     GRAFANA_SIMPLEJSON_GUID_COUNTER.labels(test_connection.__name__, guid).inc()
 
