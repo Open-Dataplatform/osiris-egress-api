@@ -9,3 +9,4 @@ asyncio
 aiohttp
 starlette_exporter
 osiris-sdk
+prometheus_client

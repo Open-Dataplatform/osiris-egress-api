@@ -31,3 +31,13 @@ class Configuration:
         A customized logger.
         """
         return logging.getLogger(self.name)
+
+
+class Metric:
+    @staticmethod
+    def decorator_test(func):
+        def wrapper(*args, **kwargs):
+            print("before")
+            func(*args, **kwargs)
+            print('after')
+        return wrapper

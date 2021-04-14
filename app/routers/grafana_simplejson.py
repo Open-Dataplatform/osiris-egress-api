@@ -21,7 +21,7 @@ from azure.core.exceptions import ResourceNotFoundError
 
 from prometheus_client import Counter, Summary, Histogram
 
-from ..dependencies import Configuration
+from ..dependencies import Configuration, Metric
 from ..schemas.simplejson_request import QueryRequest, TagValuesRequest
 
 configuration = Configuration(__file__)
@@ -31,13 +31,14 @@ logger = configuration.get_logger()
 api_key_header = APIKeyHeader(name='Authorization', auto_error=True)
 
 router = APIRouter(tags=['grafana'])
+metric = Metric()
 
 GRAFANA_SIMPLEJSON_GUID_COUNTER = Counter('grafana_simplejson_guid', 'count guid', ['method', 'guid'])
-GRAFANA_SIMPLEJSON_RESPONSE_TIME_GUID_SUMMARY = Summary('grafana_simplejson_response_time_guid_summary', 'response time with guid', ['method', 'guid'])
-GRAFANA_SIMPLEJSON_RESPONSE_TIME_GUID_HISTOGRAM = Histogram('grafana_simplejson_response_time_guid_histogram', 'response time with guid', ['method', 'guid'])
+GRAFANA_SIMPLEJSON_RESPONSE_TIME_GUID_HISTOGRAM = Histogram('grafana_simplejson_response_time_guid', 'response time with guid', ['method', 'guid'])
 
-#@GRAFANA_SIMPLEJSON_RESPONSE_TIME_GUID_HISTOGRAM.time()
+
 @router.get('/grafana/{guid}', status_code=HTTPStatus.OK)
+@metric.decorator_test
 async def test_connection(guid: str, client_id: str = Header(None), client_secret: str = Header(None)):
     """
     Endpoint for Grafana connectivity test. This checks if the GUID folder exist and the client_id
@@ -59,7 +60,6 @@ async def test_connection(guid: str, client_id: str = Header(None), client_secre
     guid_test = guid_test[random.randrange(len(guid_test))]
     guid = guid_test
     '''
-    GRAFANA_SIMPLEJSON_RESPONSE_TIME_GUID_SUMMARY.labels(test_connection.__name__, guid).observe(time_taken)
     GRAFANA_SIMPLEJSON_RESPONSE_TIME_GUID_HISTOGRAM.labels(test_connection.__name__, guid).observe(time_taken)
 
     return {'message': 'Grafana datasource used for timeseries data.'}
@@ -70,6 +70,8 @@ async def search(guid: str, client_id: str = Header(None), client_secret: str = 
     """
     Returns the valid metrics.
     """
+    start_time = time.time()
+
     logger.debug('Grafana search requested for GUID %s', guid)
     GRAFANA_SIMPLEJSON_GUID_COUNTER.labels(search.__name__, guid).inc()
 
@@ -77,6 +79,10 @@ async def search(guid: str, client_id: str = Header(None), client_secret: str = 
     grafana_settings = await __get_grafana_settings(directory_client)
     metrics = grafana_settings['metrics']
     metrics.sort()
+
+    time_taken = time.time() - start_time
+
+    GRAFANA_SIMPLEJSON_RESPONSE_TIME_GUID_HISTOGRAM.labels(search.__name__, guid).observe(time_taken)
 
     return metrics
 
