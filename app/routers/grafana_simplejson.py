@@ -9,6 +9,7 @@ import asyncio
 
 import pandas as pd
 import numpy as np
+import time
 
 from fastapi import APIRouter, HTTPException, Header
 from fastapi.security.api_key import APIKeyHeader
@@ -18,7 +19,7 @@ from pandas import DataFrame
 from azure.storage.filedatalake.aio import DataLakeDirectoryClient, DataLakeFileClient
 from azure.core.exceptions import ResourceNotFoundError
 
-from prometheus_client import Counter
+from prometheus_client import Counter, Summary, Histogram
 
 from ..dependencies import Configuration
 from ..schemas.simplejson_request import QueryRequest, TagValuesRequest
@@ -32,18 +33,34 @@ api_key_header = APIKeyHeader(name='Authorization', auto_error=True)
 router = APIRouter(tags=['grafana'])
 
 GRAFANA_SIMPLEJSON_GUID_COUNTER = Counter('grafana_simplejson_guid', 'count guid', ['method', 'guid'])
+GRAFANA_SIMPLEJSON_RESPONSE_TIME_GUID_SUMMARY = Summary('grafana_simplejson_response_time_guid_summary', 'response time with guid', ['method', 'guid'])
+GRAFANA_SIMPLEJSON_RESPONSE_TIME_GUID_HISTOGRAM = Histogram('grafana_simplejson_response_time_guid_histogram', 'response time with guid', ['method', 'guid'])
 
-
+#@GRAFANA_SIMPLEJSON_RESPONSE_TIME_GUID_HISTOGRAM.time()
 @router.get('/grafana/{guid}', status_code=HTTPStatus.OK)
 async def test_connection(guid: str, client_id: str = Header(None), client_secret: str = Header(None)):
     """
     Endpoint for Grafana connectivity test. This checks if the GUID folder exist and the client_id
     and client_secret are valid.
     """
+    start_time = time.time()
+
     logger.debug('Grafana root requested for GUID %s', guid)
     GRAFANA_SIMPLEJSON_GUID_COUNTER.labels(test_connection.__name__, guid).inc()
 
     await __get_directory_client(guid, client_id, client_secret)
+
+    time_taken = time.time() - start_time
+    '''
+    print(time_taken)
+
+    import random
+    guid_test = list('ABCDEFGH')
+    guid_test = guid_test[random.randrange(len(guid_test))]
+    guid = guid_test
+    '''
+    GRAFANA_SIMPLEJSON_RESPONSE_TIME_GUID_SUMMARY.labels(test_connection.__name__, guid).observe(time_taken)
+    GRAFANA_SIMPLEJSON_RESPONSE_TIME_GUID_HISTOGRAM.labels(test_connection.__name__, guid).observe(time_taken)
 
     return {'message': 'Grafana datasource used for timeseries data.'}
 
