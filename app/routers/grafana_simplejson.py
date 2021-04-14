@@ -31,12 +31,7 @@ api_key_header = APIKeyHeader(name='Authorization', auto_error=True)
 
 router = APIRouter(tags=['grafana'])
 
-TEST_CONNECTION_GUID_COUNTER = Counter('test_connection_guid', 'test connection guid', ['guid'])
-SEARCH_GUID_COUNTER = Counter('search_guid', 'search guid', ['guid'])
-QUERY_GUID_COUNTER = Counter('query_guid', 'query guid', ['guid'])
-ANNOTATION_GUID_COUNTER = Counter('annotation_guid', 'annotation guid', ['guid'])
-TAG_KEYS_GUID_COUNTER = Counter('tag_keys_guid', 'tag keys guid', ['guid'])
-TAG_VALUES_GUID_COUNTER = Counter('tag_values_guid', 'tag values guid', ['guid'])
+GRAFANA_SIMPLEJSON_GUID_COUNTER = Counter('grafana_simplejson_guid', 'count guid', ['method', 'guid'])
 
 
 @router.get('/grafana/{guid}', status_code=HTTPStatus.OK)
@@ -48,7 +43,7 @@ async def test_connection(guid: str, client_id: str = Header(None), client_secre
     print('----------(PRINT) TEST_CONNECTION ABCDEFGH-----------')
     logger.error('----------(ERROR) TEST_CONNECTION ABCDEFGH-----------')
     logger.debug('Grafana root requested for GUID %s', guid)
-    TEST_CONNECTION_GUID_COUNTER.labels(guid).inc()
+    GRAFANA_SIMPLEJSON_GUID_COUNTER.labels(test_connection.__name__, guid).inc()
 
     await __get_directory_client(guid, client_id, client_secret)
 
@@ -61,7 +56,7 @@ async def search(guid: str, client_id: str = Header(None), client_secret: str = 
     Returns the valid metrics.
     """
     logger.debug('Grafana search requested for GUID %s', guid)
-    SEARCH_GUID_COUNTER.labels(guid).inc()
+    GRAFANA_SIMPLEJSON_GUID_COUNTER.labels(search.__name__, guid).inc()
 
     directory_client = await __get_directory_client(guid, client_id, client_secret)
     grafana_settings = await __get_grafana_settings(directory_client)
@@ -78,7 +73,7 @@ async def query(guid: str, request: QueryRequest,
     Returns the data based on time range and target metric.
     """
     logger.debug('Grafana query requested for GUID %s', guid)
-    QUERY_GUID_COUNTER.labels(guid).inc()
+    GRAFANA_SIMPLEJSON_GUID_COUNTER.labels(query.__name__, guid).inc()
 
     if not __is_targets_set_for_all(request.targets):
         return []
@@ -105,7 +100,7 @@ async def annotation(guid: str) -> List:
     Returns empty list of annotations.
     """
     logger.debug('Grafana annotations requested for GUID %s', guid)
-    ANNOTATION_GUID_COUNTER.labels(guid).inc()
+    GRAFANA_SIMPLEJSON_GUID_COUNTER.labels(annotation.__name__, guid).inc()
 
     return []
 
@@ -116,7 +111,7 @@ async def tag_keys(guid: str, client_id: str = Header(None), client_secret: str 
     Returns list of tag-keys.
     """
     logger.debug('Grafana tag-keys requested for GUID %s', guid)
-    TAG_KEYS_GUID_COUNTER.labels(guid).inc()
+    GRAFANA_SIMPLEJSON_GUID_COUNTER.labels(tag_keys.__name__, guid).inc()
 
     directory_client = await __get_directory_client(guid, client_id, client_secret)
     grafana_settings = await __get_grafana_settings(directory_client)
@@ -131,7 +126,7 @@ async def tag_values(guid: str, request: TagValuesRequest,
     Returns list of tag values corresponding to request key.
     """
     logger.debug('Grafana tag-values requested for GUID %s', guid)
-    TAG_VALUES_GUID_COUNTER.labels(guid).inc()
+    GRAFANA_SIMPLEJSON_GUID_COUNTER.labels(tag_values.__name__, guid).inc()
 
     directory_client = await __get_directory_client(guid, client_id, client_secret)
     grafana_settings = await __get_grafana_settings(directory_client)
