@@ -10,3 +10,4 @@ aiohttp
 starlette_exporter
 osiris-sdk
 prometheus_client
+jaeger_client

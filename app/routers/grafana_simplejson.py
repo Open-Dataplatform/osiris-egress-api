@@ -18,7 +18,7 @@ from pandas import DataFrame
 from azure.storage.filedatalake.aio import DataLakeDirectoryClient, DataLakeFileClient
 from azure.core.exceptions import ResourceNotFoundError
 
-from ..dependencies import Configuration, Metric
+from ..dependencies import Configuration, Metric, TracerClass
 from ..schemas.simplejson_request import QueryRequest, TagValuesRequest
 
 configuration = Configuration(__file__)
@@ -28,6 +28,8 @@ logger = configuration.get_logger()
 api_key_header = APIKeyHeader(name='Authorization', auto_error=True)
 
 router = APIRouter(tags=['grafana'])
+
+tracer = TracerClass().get_tracer()
 
 
 @router.get('/grafana/{guid}', status_code=HTTPStatus.OK)
@@ -52,13 +54,18 @@ async def search(guid: str, client_id: str = Header(None), client_secret: str = 
     Returns the valid metrics.
     """
     logger.debug('Grafana search requested for GUID %s', guid)
+    with tracer.start_span('grafana_search') as span:
+        span.set_tag('guid', guid)
 
-    directory_client = await __get_directory_client(guid, client_id, client_secret)
-    grafana_settings = await __get_grafana_settings(directory_client)
-    metrics = grafana_settings['metrics']
-    metrics.sort()
+        with tracer.start_active_span('get_directory_client', child_of=span):
+            directory_client = await __get_directory_client(guid, client_id, client_secret)
+        with tracer.start_active_span('get_grafana_settings', child_of=span):
+            grafana_settings = await __get_grafana_settings(directory_client)
+        with tracer.start_active_span('sort metrics', child_of=span):
+            metrics = grafana_settings['metrics']
+            metrics.sort()
 
-    return metrics
+        return metrics
 
 
 @router.post('/grafana/{guid}/query', status_code=HTTPStatus.OK)
@@ -70,23 +77,29 @@ async def query(guid: str, request: QueryRequest,
     """
     logger.debug('Grafana query requested for GUID %s', guid)
 
-    if not __is_targets_set_for_all(request.targets):
-        return []
+    with tracer.start_span('grafana_query') as span:
+        span.set_tag('guid', guid)
+        if not __is_targets_set_for_all(request.targets):
+            return []
 
-    directory_client = await __get_directory_client(guid, client_id, client_secret)
-    from_date = pd.Timestamp(request.range['from']).to_pydatetime()
-    to_date = pd.Timestamp(request.range['to']).to_pydatetime()
+        with tracer.start_active_span('get_directory_client', child_of=span):
+            directory_client = await __get_directory_client(guid, client_id, client_secret)
+        from_date = pd.Timestamp(request.range['from']).to_pydatetime()
+        to_date = pd.Timestamp(request.range['to']).to_pydatetime()
 
-    data_df = await __retrieve_data(from_date, to_date, directory_client)
-    data_df = await __filter_with_adhoc_filters(directory_client, data_df, request.adhocFilters)
+        with tracer.start_active_span('retrieve_data', child_of=span):
+            data_df = await __retrieve_data(from_date, to_date, directory_client)
+        with tracer.start_active_span('filter_with_adhoc_filters', child_of=span):
+            data_df = await __filter_with_adhoc_filters(directory_client, data_df, request.adhocFilters)
 
-    freq = f'{request.intervalMs}ms'
+        freq = f'{request.intervalMs}ms'
 
-    results = []
-    for target in request.targets:
-        results.extend(__dataframe_to_response(data_df, target.type, target.target, target.data, freq))
+        with tracer.start_active_span('data_frame_to_response', child_of=span):
+            results = []
+            for target in request.targets:
+                results.extend(__dataframe_to_response(data_df, target.type, target.target, target.data, freq))
 
-    return results
+        return results
 
 
 @router.post('/grafana/{guid}/annotations', status_code=HTTPStatus.OK)

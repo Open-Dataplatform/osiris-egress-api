@@ -8,6 +8,8 @@ import time
 from logging import Logger
 from functools import wraps
 
+from jaeger_client import Config
+from jaeger_client.metrics.prometheus import PrometheusMetricsFactory
 from prometheus_client import Histogram, Counter
 
 
@@ -51,6 +53,7 @@ class Metric:
         """
         Decorator method for metrics of type histogram
         """
+
         @wraps(func)
         async def wrapper(*args, **kwargs):
             start_time = time.time()
@@ -75,3 +78,52 @@ class Metric:
             return result
 
         return wrapper
+
+
+def singleton(cls, *args, **kw):
+    """
+    Function needed to create a singleton of a class
+    """
+    instances = {}
+
+    def _singleton():
+        if cls not in instances:
+            instances[cls] = cls(*args, **kw)
+        return instances[cls]
+
+    return _singleton
+
+
+@singleton
+class TracerClass:  # pylint: disable=too-few-public-methods
+    """
+    Used to get a tracer for Osiris-Egress-API.
+    Note: There can only be one tracers, hence we need to make a singleton class
+    """
+    def __init__(self, service='osiris_egress_api'):
+        tracer_config = Config(
+            config={
+                'sampler': {
+                    'type': 'const',
+                    'param': 1,
+                },
+                'local_agent': {
+                    # If Jaeger backend is not on localhost - but not recommended as UDP does not guarantee delivery
+                    # See: https://github.com/jaegertracing/jaeger-client-python
+                    # 'reporting_host': '',
+                    # 'reporting_port': '',
+                },
+                'logging': True,
+            },
+            service_name=service,
+            validate=True,
+            # Adds some metrics to Prometheus
+            metrics_factory=PrometheusMetricsFactory(service_name_label='osiris_egress_api')
+        )
+        self.tracer = tracer_config.initialize_tracer()
+
+    def get_tracer(self):
+        """
+        Returns the tracer
+        """
+        return self.tracer

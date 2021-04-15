@@ -13,7 +13,7 @@ from azure.core.exceptions import ResourceNotFoundError
 from azure.storage.filedatalake import DataLakeDirectoryClient, FileSystemClient, StorageStreamDownloader
 from osiris.azure_client_authorization import AzureCredential
 
-from ..dependencies import Configuration, Metric
+from ..dependencies import Configuration, Metric, TracerClass
 
 configuration = Configuration(__file__)
 config = configuration.get_config()
@@ -22,6 +22,8 @@ logger = configuration.get_logger()
 access_token_header = APIKeyHeader(name='Authorization', auto_error=True)
 
 router = APIRouter(tags=['downloads'])
+
+tracer = TracerClass().get_tracer()
 
 
 @router.get('/{guid}/json', response_class=StreamingResponse)
@@ -35,13 +37,18 @@ async def download_json_file(guid: str,
     """
     logger.debug('download json file requested')
 
-    with __get_filesystem_client(token) as filesystem_client:
-        directory_client = filesystem_client.get_directory_client(guid)
-        __check_directory_exist(directory_client)
-        path = f'year={file_date.year:02d}/month={file_date.month:02d}/day={file_date.day:02d}/data.json'
-        stream = __download_file(path, directory_client)
+    with tracer.start_span('download_json_file') as span:
+        with __get_filesystem_client(token) as filesystem_client:
+            span.set_tag('guid', guid)
+            with tracer.start_active_span('get_directory_client', child_of=span):
+                directory_client = filesystem_client.get_directory_client(guid)
+            with tracer.start_active_span('check_directory_exists', child_of=span):
+                __check_directory_exist(directory_client)
+            with tracer.start_active_span('download_file', child_of=span):
+                path = f'year={file_date.year:02d}/month={file_date.month:02d}/day={file_date.day:02d}/data.json'
+                stream = __download_file(path, directory_client)
 
-        return StreamingResponse(stream.chunks(), media_type='application/octet-stream')
+            return StreamingResponse(stream.chunks(), media_type='application/octet-stream')
 
 
 @router.get('/{guid}', response_class=StreamingResponse)
@@ -56,13 +63,18 @@ async def download_file(guid: str,
     """
     logger.debug('download file requested')
 
-    with __get_filesystem_client(token) as filesystem_client:
-        directory_client = filesystem_client.get_directory_client(guid)
-        __check_directory_exist(directory_client)
-        path = __get_path_for_generic_file(file_date, guid, filesystem_client)
-        stream = __download_file(path, directory_client)
+    with tracer.start_span('download_file') as span:
+        span.set_tag('guid', guid)
+        with __get_filesystem_client(token) as filesystem_client:
+            with tracer.start_active_span('get_directory_client', child_of=span):
+                directory_client = filesystem_client.get_directory_client(guid)
+            with tracer.start_active_span('check_directory_exists', child_of=span):
+                __check_directory_exist(directory_client)
+            with tracer.start_active_span('download_file', child_of=span):
+                path = __get_path_for_generic_file(file_date, guid, filesystem_client)
+                stream = __download_file(path, directory_client)
 
-        return StreamingResponse(stream.chunks(), media_type='application/octet-stream')
+            return StreamingResponse(stream.chunks(), media_type='application/octet-stream')
 
 
 def __check_directory_exist(directory_client: DataLakeDirectoryClient):
