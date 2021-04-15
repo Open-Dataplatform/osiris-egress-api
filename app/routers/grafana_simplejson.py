@@ -18,8 +18,6 @@ from pandas import DataFrame
 from azure.storage.filedatalake.aio import DataLakeDirectoryClient, DataLakeFileClient
 from azure.core.exceptions import ResourceNotFoundError
 
-from prometheus_client import Counter
-
 from ..dependencies import Configuration, Metric
 from ..schemas.simplejson_request import QueryRequest, TagValuesRequest
 

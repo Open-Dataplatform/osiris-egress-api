@@ -37,12 +37,14 @@ class Configuration:
         return logging.getLogger(self.name)
 
 
-class Metric:
+class Metric:  # pylint: disable=too-few-public-methods
     """
     Class to wrap all metrics for prometheus.
     """
     HISTOGRAM = Histogram('osiris_egress_api', 'Osiris Egress API (method, guid, time)', ['method', 'guid'])
-    COUNTER = Counter('osiris_egress_api_method_counter', 'Osiris Egress API counter (method, guid)', ['method', 'guid'])
+    COUNTER = Counter('osiris_egress_api_method_counter',
+                      'Osiris Egress API counter (method, guid)',
+                      ['method', 'guid'])
 
     @staticmethod
     def count_and_histogram(func):
