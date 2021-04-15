@@ -37,7 +37,7 @@ class Configuration:
         return logging.getLogger(self.name)
 
 
-class Metric:  # pylint: disable=too-few-public-methods
+class Metric:
     """
     Class to wrap all metrics for prometheus.
     """
@@ -47,9 +47,9 @@ class Metric:  # pylint: disable=too-few-public-methods
                       ['method', 'guid'])
 
     @staticmethod
-    def count_and_histogram(func):
+    def histogram(func):
         """
-        Decorator method for metrics on count and histogram
+        Decorator method for metrics of type histogram
         """
         @wraps(func)
         async def wrapper(*args, **kwargs):
@@ -59,6 +59,18 @@ class Metric:  # pylint: disable=too-few-public-methods
 
             time_taken = time.time() - start_time
             Metric.HISTOGRAM.labels(func.__name__, kwargs['guid']).observe(time_taken)
+            return result
+
+        return wrapper
+
+    @staticmethod
+    def counter(func):
+        """
+        Decorator method for metrics of type counter
+        """
+        @wraps(func)
+        async def wrapper(*args, **kwargs):
+            result = await func(*args, **kwargs)
             Metric.COUNTER.labels(func.__name__, kwargs['guid']).inc()
             return result
 

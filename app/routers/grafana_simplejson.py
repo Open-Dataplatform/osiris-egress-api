@@ -31,7 +31,7 @@ router = APIRouter(tags=['grafana'])
 
 
 @router.get('/grafana/{guid}', status_code=HTTPStatus.OK)
-@Metric.count_and_histogram
+@Metric.histogram
 async def test_connection(guid: str, client_id: str = Header(None), client_secret: str = Header(None)):
     """
     Endpoint for Grafana connectivity test. This checks if the GUID folder exist and the client_id
@@ -46,7 +46,7 @@ async def test_connection(guid: str, client_id: str = Header(None), client_secre
 
 
 @router.post('/grafana/{guid}/search', status_code=HTTPStatus.OK)
-@Metric.count_and_histogram
+@Metric.histogram
 async def search(guid: str, client_id: str = Header(None), client_secret: str = Header(None)):
     """
     Returns the valid metrics.
@@ -62,7 +62,7 @@ async def search(guid: str, client_id: str = Header(None), client_secret: str = 
 
 
 @router.post('/grafana/{guid}/query', status_code=HTTPStatus.OK)
-@Metric.count_and_histogram
+@Metric.histogram
 async def query(guid: str, request: QueryRequest,
                 client_id: str = Header(None), client_secret: str = Header(None)) -> List[Dict]:
     """
@@ -90,7 +90,7 @@ async def query(guid: str, request: QueryRequest,
 
 
 @router.post('/grafana/{guid}/annotations', status_code=HTTPStatus.OK)
-@Metric.count_and_histogram
+@Metric.histogram
 async def annotation(guid: str) -> List:
     """
     Returns empty list of annotations.
@@ -101,7 +101,7 @@ async def annotation(guid: str) -> List:
 
 
 @router.post('/grafana/{guid}/tag-keys', status_code=HTTPStatus.OK)
-@Metric.count_and_histogram
+@Metric.histogram
 async def tag_keys(guid: str, client_id: str = Header(None), client_secret: str = Header(None)) -> List:
     """
     Returns list of tag-keys.
@@ -115,7 +115,7 @@ async def tag_keys(guid: str, client_id: str = Header(None), client_secret: str 
 
 
 @router.post('/grafana/{guid}/tag-values', status_code=HTTPStatus.OK)
-@Metric.count_and_histogram
+@Metric.histogram
 async def tag_values(guid: str, request: TagValuesRequest,
                      client_id: str = Header(None), client_secret: str = Header(None)) -> List:
     """

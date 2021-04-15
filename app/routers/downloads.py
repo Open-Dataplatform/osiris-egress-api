@@ -25,7 +25,7 @@ router = APIRouter(tags=['downloads'])
 
 
 @router.get('/{guid}/json', response_class=StreamingResponse)
-@Metric.count_and_histogram
+@Metric.histogram
 async def download_json_file(guid: str,
                              file_date: date = datetime.utcnow().date(),
                              token: str = Security(access_token_header)) -> StreamingResponse:
@@ -45,7 +45,7 @@ async def download_json_file(guid: str,
 
 
 @router.get('/{guid}', response_class=StreamingResponse)
-@Metric.count_and_histogram
+@Metric.histogram
 async def download_file(guid: str,
                         file_date: date = datetime.utcnow().date(),
                         token: str = Security(access_token_header)) -> StreamingResponse:
