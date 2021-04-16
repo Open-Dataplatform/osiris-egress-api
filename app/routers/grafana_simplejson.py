@@ -86,6 +86,8 @@ async def query(guid: str, request: QueryRequest,
             directory_client = await __get_directory_client(guid, client_id, client_secret)
         from_date = pd.Timestamp(request.range['from']).to_pydatetime()
         to_date = pd.Timestamp(request.range['to']).to_pydatetime()
+        span.set_tag('request_from_date', str(from_date))
+        span.set_tag('request_to_date', str(to_date))
 
         with tracer.start_active_span('retrieve_data', child_of=span):
             data_df = await __retrieve_data(from_date, to_date, directory_client)
