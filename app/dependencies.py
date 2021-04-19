@@ -101,6 +101,12 @@ class TracerClass:  # pylint: disable=too-few-public-methods
     Note: There can only be one tracers, hence we need to make a singleton class
     """
     def __init__(self, service='osiris_egress_api'):
+        configuration = Configuration(__file__)
+        config = configuration.get_config()
+
+        reporting_host = config['Jaeger Agent']['reporting_host']
+        reporting_port = config['Jaeger Agent']['reporting_port']
+
         tracer_config = Config(
             config={
                 'sampler': {
@@ -120,6 +126,10 @@ class TracerClass:  # pylint: disable=too-few-public-methods
             # Adds some metrics to Prometheus
             metrics_factory=PrometheusMetricsFactory(service_name_label='osiris_egress_api')
         )
+        if reporting_host != 'localhost':
+            tracer_config['local_agent']['reporting_host'] = reporting_host
+            tracer_config['local_agent']['reporting_port'] = reporting_port
+
         self.tracer = tracer_config.initialize_tracer()
 
     def get_tracer(self):
