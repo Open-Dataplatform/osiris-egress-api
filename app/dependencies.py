@@ -107,18 +107,18 @@ class TracerClass:  # pylint: disable=too-few-public-methods
         reporting_host = config['Jaeger Agent']['reporting_host']
         reporting_port = config['Jaeger Agent']['reporting_port']
 
+        local_agent = {}  # Default empty - if run on localhost
+        if reporting_host != 'localhost':
+            local_agent['reporting_host'] = reporting_host
+            local_agent['reporting_port'] = reporting_port
+
         tracer_config = Config(
             config={
                 'sampler': {
                     'type': 'const',
                     'param': 1,
                 },
-                'local_agent': {
-                    # If Jaeger backend is not on localhost - but not recommended as UDP does not guarantee delivery
-                    # See: https://github.com/jaegertracing/jaeger-client-python
-                    # 'reporting_host': '',
-                    # 'reporting_port': '',
-                },
+                'local_agent': local_agent,
                 'logging': True,
             },
             service_name=service,
