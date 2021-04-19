@@ -12,6 +12,10 @@ metadata:
     app.kubernetes.io/component: {{ .Values.appName }}
     app.kubernetes.io/version: {{ .Chart.Version }}
   name: {{ .Values.appName }}
+  annotations:
+  {{- range $key, $value := .Values.deployment.annotations }}
+    {{ $key }}: {{ $value | quote }}
+  {{- end }}
 spec:
   replicas: {{ .Values.deployment.replicas }}
   selector:
