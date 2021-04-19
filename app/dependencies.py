@@ -126,9 +126,6 @@ class TracerClass:  # pylint: disable=too-few-public-methods
             # Adds some metrics to Prometheus
             metrics_factory=PrometheusMetricsFactory(service_name_label='osiris_egress_api')
         )
-        if reporting_host != 'localhost':
-            tracer_config['local_agent']['reporting_host'] = reporting_host
-            tracer_config['local_agent']['reporting_port'] = reporting_port
 
         self.tracer = tracer_config.initialize_tracer()
 
