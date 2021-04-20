@@ -12,6 +12,7 @@ import numpy as np
 
 from fastapi import APIRouter, HTTPException, Header
 from fastapi.security.api_key import APIKeyHeader
+from jaeger_client import Span
 from osiris.azure_client_authorization import ClientAuthorization
 from pandas import DataFrame
 
@@ -82,25 +83,31 @@ async def query(guid: str, request: QueryRequest,
         if not __is_targets_set_for_all(request.targets):
             return []
 
-        with tracer.start_active_span('get_directory_client', child_of=span):
+        with tracer.start_span('get_directory_client', child_of=span):
             directory_client = await __get_directory_client(guid, client_id, client_secret)
         from_date = pd.Timestamp(request.range['from']).to_pydatetime()
         to_date = pd.Timestamp(request.range['to']).to_pydatetime()
         span.set_tag('request_from_date', str(from_date))
         span.set_tag('request_to_date', str(to_date))
 
-        with tracer.start_active_span('retrieve_data', child_of=span):
-            data_df = await __retrieve_data(from_date, to_date, directory_client)
-        with tracer.start_active_span('filter_with_adhoc_filters', child_of=span):
+        with tracer.start_span('retrieve_data', child_of=span) as retrieve_data_span:
+            data_df = await __retrieve_data(from_date, to_date, directory_client, retrieve_data_span)
+        with tracer.start_span('filter_with_adhoc_filters', child_of=span):
             data_df = await __filter_with_adhoc_filters(directory_client, data_df, request.adhocFilters)
 
         freq = f'{request.intervalMs}ms'
 
-        with tracer.start_active_span('data_frame_to_response', child_of=span):
-            results = []
+        results = []
+        with tracer.start_span('data_frame_to_response', child_of=span):
             for target in request.targets:
                 results.extend(__dataframe_to_response(data_df, target.type, target.target, target.data, freq))
 
+        with tracer.start_span('get_size_of_result', child_of=span):
+            # We use repr(.) here, which is the printable representation of the object
+            # - it is not fully accurate - as, i.e., a float or integer printed can take up less space
+            # - Not sure how objects like floats and ints are transmitted
+            # - We did not use len(pickle(results)) as it is a security issue according to bandit
+            span.set_tag('result_size', len(repr(results)))
         return results
 
 
@@ -252,21 +259,25 @@ def __arrange_time_range_in_dict(from_date: datetime, to_date: datetime) -> Dict
     return time_range_dict
 
 
-async def __download_files(timeslot_chunk: List[datetime], directory_client: DataLakeDirectoryClient) -> List:
+async def __download_files(timeslot_chunk: List[datetime],
+                           directory_client: DataLakeDirectoryClient,
+                           retrieve_data_span: Span) -> List:
 
-    async def download(timeslot: datetime) -> Optional[str]:
-        path = f'year={timeslot.year}/month={timeslot.month:02d}/day={timeslot.day:02d}/data.json'
+    async def download(timeslot: datetime, retrieve_data_span_local: Span) -> Optional[str]:
+        with tracer.start_span('retrieve_data_download', child_of=retrieve_data_span_local) as local_span:
+            path = f'year={timeslot.year}/month={timeslot.month:02d}/day={timeslot.day:02d}/data.json'
+            local_span.set_tag('path', path)
 
-        file_client: DataLakeFileClient = await __get_file_client(directory_client, path)
-        if not file_client:
-            return None
+            file_client: DataLakeFileClient = await __get_file_client(directory_client, path)
+            if not file_client:
+                return None
 
-        downloaded_file = await file_client.download_file()
-        file_json = pd.read_json(await downloaded_file.readall())
+            downloaded_file = await file_client.download_file()
+            file_json = pd.read_json(await downloaded_file.readall())
 
-        return file_json
+            return file_json
 
-    return await asyncio.gather(*[download(timeslot) for timeslot in timeslot_chunk])
+    return await asyncio.gather(*[download(timeslot, retrieve_data_span) for timeslot in timeslot_chunk])
 
 
 def __split_into_chunks(lst, chunk_size):
@@ -275,14 +286,15 @@ def __split_into_chunks(lst, chunk_size):
 
 
 async def __retrieve_data(from_date: datetime, to_date: datetime,
-                          directory_client: DataLakeDirectoryClient) -> Optional[DataFrame]:
+                          directory_client: DataLakeDirectoryClient,
+                          retrieve_data_span: Span) -> Optional[DataFrame]:
 
     time_range = pd.date_range(from_date.strftime("%Y-%m-%d"), to_date.strftime("%Y-%m-%d"), freq='D')
 
     data = None
     # We need to divide the timeslots into chunks so we don't hit the limit of asyncio.gather.
     for chunk in __split_into_chunks(time_range, 200):
-        df_list = await __download_files(chunk, directory_client)
+        df_list = await __download_files(chunk, directory_client, retrieve_data_span)
 
         if all(elem is None for elem in df_list):
             continue
