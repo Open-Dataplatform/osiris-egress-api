@@ -17,6 +17,7 @@ deployment:
     path: /
     initialDelaySeconds: 15
     timeoutSeconds: 2
+    periodSeconds: 30
 
 service:
   type: ClusterIP
