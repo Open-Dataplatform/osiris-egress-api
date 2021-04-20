@@ -1,6 +1,9 @@
 appName: osiris-egress
 
 deployment:
+  annotations:
+    sidecar.jaegertracing.io/inject: "true"
+
   replicas: 1
   image:
     repository: <IMAGENAME>
