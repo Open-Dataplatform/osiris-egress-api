@@ -1,8 +1,16 @@
+from unittest.mock import patch
+
 from fastapi.testclient import TestClient
 
-from app.main import app
 
-client = TestClient(app)
+def get_app():
+    with patch('app.dependencies.Configuration') as _:
+        from app.main import app
+
+        return TestClient(app)
+
+
+client = get_app()
 
 
 def test_read_main():
