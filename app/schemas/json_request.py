@@ -1,5 +1,5 @@
 """
-Schema representing a request for the query endpoint for Grafana SimpleJson.
+Schema representing a request for the query endpoint for Grafana Json.
 """
 from typing import List, Dict
 

@@ -1,7 +1,7 @@
 # osiris-egress-api <!-- omit in toc -->
 - [Endpoint documentation](#endpoint-documentation)
   - [Location](#location)
-- [Grafana SimpleJson](#grafana-simplejson)
+- [Grafana Json](#grafana-json)
 - [Data application registration](#data-application-registration)
   - [Prerequisites](#prerequisites)
   - [Steps](#steps)
@@ -32,7 +32,7 @@ file structure with regards to the event time for the data:
 {guid}/year={now.year:02d}/month={now.month:02d}/day={now.day:02d}/
 ```
 
-## Grafana SimpleJson
+## Grafana Json
 The Osiris Egress API supports the [JSON plugin](https://grafana.com/grafana/plugins/simpod-json-datasource/)
 for Grafana. You can connect to a backend running the API in the following way. When you add a new data source you have 
 to chose JSON plugin. In the URL path add the hostname, port and the GUID:

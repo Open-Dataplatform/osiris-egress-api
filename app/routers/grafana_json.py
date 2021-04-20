@@ -1,5 +1,5 @@
 """
-Implements endpoints which are required by the SimpleJson plugin for Grafana.
+Implements endpoints which are required by the Json plugin for Grafana.
 """
 from datetime import datetime
 from http import HTTPStatus
@@ -19,7 +19,7 @@ from azure.storage.filedatalake.aio import DataLakeDirectoryClient, DataLakeFile
 from azure.core.exceptions import ResourceNotFoundError
 
 from ..dependencies import Configuration, Metric, TracerClass
-from ..schemas.simplejson_request import QueryRequest, TagValuesRequest
+from ..schemas.json_request import QueryRequest, TagValuesRequest
 
 configuration = Configuration(__file__)
 config = configuration.get_config()
