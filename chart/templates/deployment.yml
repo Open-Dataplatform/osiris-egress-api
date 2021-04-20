@@ -34,7 +34,7 @@ spec:
           name: deploy-port
         volumeMounts:
         - name: config-volume
-          mountPath: /etc/{{ .Values.appName }}/
+          mountPath: /etc/osiris/
         livenessProbe:
           httpGet:
             path: {{ .Values.deployment.livenessProbe.path }}
