@@ -43,7 +43,9 @@ async def test_connection(guid: str, client_id: str = Header(None), client_secre
 
     logger.debug('Grafana root requested for GUID %s', guid)
 
-    await __get_directory_client(guid, client_id, client_secret)
+    directory_client = await __get_directory_client(guid, client_id, client_secret)
+
+    await directory_client.close()
 
     return {'message': 'Grafana datasource used for timeseries data.'}
 
@@ -66,6 +68,7 @@ async def search(guid: str, client_id: str = Header(None), client_secret: str = 
             metrics = grafana_settings['metrics']
             metrics.sort()
 
+        await directory_client.close()
         return metrics
 
 
@@ -108,6 +111,8 @@ async def query(guid: str, request: QueryRequest,
             # - Not sure how objects like floats and ints are transmitted
             # - We did not use len(pickle(results)) as it is a security issue according to bandit
             span.set_tag('result_size', len(repr(results)))
+
+        await directory_client.close()
         return results
 
 
@@ -133,6 +138,7 @@ async def tag_keys(guid: str, client_id: str = Header(None), client_secret: str 
     directory_client = await __get_directory_client(guid, client_id, client_secret)
     grafana_settings = await __get_grafana_settings(directory_client)
 
+    await directory_client.close()
     return grafana_settings['tag_keys']
 
 
@@ -151,6 +157,7 @@ async def tag_values(guid: str, request: TagValuesRequest,
     if request.key in grafana_settings['tag_values']:
         return grafana_settings['tag_values'][request.key]
 
+    await directory_client.close()
     return []
 
 
