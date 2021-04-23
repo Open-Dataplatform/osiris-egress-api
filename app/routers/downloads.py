@@ -4,6 +4,7 @@ Contains endpoints for downloading data to the DataPlatform.
 import os
 from http import HTTPStatus
 from datetime import datetime, date
+from typing import Dict
 
 from fastapi import APIRouter, HTTPException, Security
 from fastapi.security.api_key import APIKeyHeader
@@ -77,6 +78,23 @@ async def download_file(guid: str,
             return StreamingResponse(stream.chunks(), media_type='application/octet-stream')
 
 
+@router.get('/{guid}/retrieve_state', response_class=StreamingResponse)
+@Metric.histogram
+async def retrieve_state(guid: str,
+                         token: str = Security(access_token_header)) -> StreamingResponse:
+    """
+    get state file from data storage from the given guid. This endpoint expects data to be
+    stored in {guid}/state.json
+    """
+    logger.debug('retrieve state requested')
+    with __get_filesystem_client(token) as filesystem_client:
+        directory_client = filesystem_client.get_directory_client(guid)
+        __check_directory_exist(directory_client)
+        stream = __download_file('state.json', directory_client)
+
+    return StreamingResponse(stream.chunks(), media_type='application/octet-stream')
+
+
 def __check_directory_exist(directory_client: DataLakeDirectoryClient):
     try:
         directory_client.get_directory_properties()
@@ -118,3 +136,10 @@ def __get_filesystem_client(token: str) -> FileSystemClient:
     credential = AzureCredential(token)
 
     return FileSystemClient(account_url, filesystem_name, credential=credential)
+
+
+def __retrieve_state(directory_client: DataLakeDirectoryClient) -> Dict:
+    file_client = directory_client.get_file_client('state.json')
+    downloaded_file = file_client.download_file()
+    state_data = downloaded_file.readall()
+    return state_data
