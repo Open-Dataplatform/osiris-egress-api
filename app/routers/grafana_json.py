@@ -13,7 +13,7 @@ import numpy as np
 from fastapi import APIRouter, HTTPException, Header
 from fastapi.security.api_key import APIKeyHeader
 from jaeger_client import Span
-from osiris.azure_client_authorization import ClientAuthorization
+from osiris.core.azure_client_authorization import ClientAuthorization
 from pandas import DataFrame
 
 from azure.storage.filedatalake.aio import DataLakeDirectoryClient, DataLakeFileClient
