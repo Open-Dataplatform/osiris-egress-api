@@ -4,7 +4,6 @@ Contains endpoints for downloading data to the DataPlatform.
 import os
 from http import HTTPStatus
 from datetime import datetime, date
-from typing import Dict
 
 from fastapi import APIRouter, HTTPException, Security
 from fastapi.security.api_key import APIKeyHeader
@@ -136,10 +135,3 @@ def __get_filesystem_client(token: str) -> FileSystemClient:
     credential = AzureCredential(token)
 
     return FileSystemClient(account_url, filesystem_name, credential=credential)
-
-
-def __retrieve_state(directory_client: DataLakeDirectoryClient) -> Dict:
-    file_client = directory_client.get_file_client('state.json')
-    downloaded_file = file_client.download_file()
-    state_data = downloaded_file.readall()
-    return state_data
