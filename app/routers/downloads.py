@@ -77,6 +77,23 @@ async def download_file(guid: str,
             return StreamingResponse(stream.chunks(), media_type='application/octet-stream')
 
 
+@router.get('/{guid}/retrieve_state', response_class=StreamingResponse)
+@Metric.histogram
+async def retrieve_state(guid: str,
+                         token: str = Security(access_token_header)) -> StreamingResponse:
+    """
+    get state file from data storage from the given guid. This endpoint expects data to be
+    stored in {guid}/state.json
+    """
+    logger.debug('retrieve state requested')
+    with __get_filesystem_client(token) as filesystem_client:
+        directory_client = filesystem_client.get_directory_client(guid)
+        __check_directory_exist(directory_client)
+        stream = __download_file('state.json', directory_client)
+
+    return StreamingResponse(stream.chunks(), media_type='application/octet-stream')
+
+
 def __check_directory_exist(directory_client: DataLakeDirectoryClient):
     try:
         directory_client.get_directory_properties()
