@@ -77,6 +77,23 @@ async def download_file(guid: str,
             return StreamingResponse(stream.chunks(), media_type='application/octet-stream')
 
 
+@router.get('/{guid}/jao', response_class=StreamingResponse)
+@Metric.histogram
+async def download_jao_data(guid: str,
+                            from_date: date = datetime.utcnow().date(),
+                            to_date: date = datetime.utcnow().date(),
+                            token: str = Security(access_token_header)) -> StreamingResponse:
+    logger.debug('download jao data requested')
+
+    with __get_filesystem_client(token) as filesystem_client:
+        directory_client = filesystem_client.get_directory_client(guid)
+        __check_directory_exist(directory_client)
+        path = __get_path_for_generic_file(from_date, guid, filesystem_client)
+        stream = __download_file(path, directory_client)
+
+    return StreamingResponse(stream.chunks(), media_type='application/octet-stream')
+
+
 @router.get('/{guid}/retrieve_state', response_class=StreamingResponse)
 @Metric.histogram
 async def retrieve_state(guid: str,
