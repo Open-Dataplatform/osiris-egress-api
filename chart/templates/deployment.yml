@@ -49,6 +49,13 @@ spec:
           initialDelaySeconds: {{ .Values.deployment.readinessProbe.initialDelaySeconds }}
           timeoutSeconds: {{ .Values.deployment.readinessProbe.timeoutSeconds }}
           periodSeconds: {{ .Values.deployment.readinessProbe.periodSeconds }}
+        resources:
+          requests:
+            memory: {{ .Values.deployment.resources.requests.memory | quote }}
+            cpu: {{ .Values.deployment.resources.requests.cpu | quote }}
+          limits:
+            memory: {{ .Values.deployment.resources.limits.memory | quote }}
+            cpu: {{ .Values.deployment.resources.limits.cpu | quote }}
       volumes:
       - name: config-volume
         configMap:
