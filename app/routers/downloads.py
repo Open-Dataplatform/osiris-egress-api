@@ -1,11 +1,13 @@
 """
 Contains endpoints for downloading data to the DataPlatform.
 """
+import json
 import os
 from http import HTTPStatus
 from datetime import datetime, date
 
 from dateutil.relativedelta import relativedelta
+import pandas as pd
 from fastapi import APIRouter, HTTPException, Security
 from fastapi.security.api_key import APIKeyHeader
 from fastapi.responses import StreamingResponse
@@ -86,33 +88,36 @@ async def download_jao_data(guid: str,
                             to_date: date = datetime.utcnow().date(),
                             token: str = Security(access_token_header)) -> StreamingResponse:
     """
-    Download JAO data endpoint with data from from_date to to_date
+    Download JAO data endpoint with data from from_date to to_date.
+    Returns the an appended list of all JSON data.
     """
-    async def download(fetch_date: date):
-        path = __get_path_for_generic_file(from_date, guid, filesystem_client)
-        stream = __download_file(path, directory_client)
+    async def download(download_date: date, filesystem_client_local, directory_client_local):
+        path = __get_path_for_generic_file(download_date, guid, filesystem_client_local)
+        stream = __download_file(path, directory_client_local)
 
-        return stream
+        json_data = json.loads(stream.readall())
+
+        return json_data
 
     logger.debug('download jao data requested')
-
-    print(from_date, type(from_date))
-    print(to_date, type(to_date))
 
     with __get_filesystem_client(token) as filesystem_client:
         directory_client = filesystem_client.get_directory_client(guid)
         __check_directory_exist(directory_client)
-        fetch_date = from_date.replace(day=1)
         # We store data the first every month - as data does not change
-        fetch_dates = [fetch_date]
+        fetch_date = from_date.replace(day=1)
+        fetch_dates = []
         while fetch_date < to_date:
-            fetch_date += relativedelta(months=+1)
             fetch_dates.append(fetch_date)
-        path = __get_path_for_generic_file(from_date, guid, filesystem_client)
-        stream = __download_file(path, directory_client)
+            fetch_date += relativedelta(months=+1)
 
-    # foo = await asyncio.gather(*[download(fetch_date) for fetch_date in fetch_dates])
-    return StreamingResponse(stream.chunks(), media_type='application/octet-stream')
+        responses = await asyncio.gather(*[download(fetch_date, filesystem_client, directory_client) for fetch_date in fetch_dates])
+
+    concat_response = []
+    for response in responses:
+        concat_response.append(response)
+
+    return StreamingResponse(iter(json.dumps(concat_response)), media_type='application/octet-stream')
 
 
 @router.get('/{guid}/retrieve_state', response_class=StreamingResponse)
