@@ -3,18 +3,15 @@ Contains endpoints for downloading data to the DataPlatform.
 """
 import json
 import os
-from http import HTTPStatus
 from datetime import datetime, date
-
+import asyncio
 from dateutil.relativedelta import relativedelta
-import pandas as pd
 from fastapi import APIRouter, HTTPException, Security
 from fastapi.security.api_key import APIKeyHeader
 from fastapi.responses import StreamingResponse
 
 from azure.core.exceptions import ResourceNotFoundError, HttpResponseError
 from azure.storage.filedatalake import DataLakeDirectoryClient, FileSystemClient, StorageStreamDownloader
-import asyncio
 from osiris.core.azure_client_authorization import AzureCredential
 
 from ..dependencies import Configuration, Metric, TracerClass
@@ -111,7 +108,8 @@ async def download_jao_data(guid: str,
             fetch_dates.append(fetch_date)
             fetch_date += relativedelta(months=+1)
 
-        responses = await asyncio.gather(*[download(fetch_date, filesystem_client, directory_client) for fetch_date in fetch_dates])
+        responses = await asyncio.gather(*[download(fetch_date, filesystem_client, directory_client)
+                                           for fetch_date in fetch_dates])
 
     concat_response = []
     for response in responses:
