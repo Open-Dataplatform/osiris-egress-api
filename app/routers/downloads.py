@@ -10,7 +10,7 @@ from fastapi import APIRouter, HTTPException, Security
 from fastapi.security.api_key import APIKeyHeader
 from fastapi.responses import StreamingResponse
 
-from azure.core.exceptions import ResourceNotFoundError
+from azure.core.exceptions import ResourceNotFoundError, HttpResponseError
 from azure.storage.filedatalake import DataLakeDirectoryClient, FileSystemClient, StorageStreamDownloader
 import asyncio
 from osiris.core.azure_client_authorization import AzureCredential
@@ -137,8 +137,8 @@ def __check_directory_exist(directory_client: DataLakeDirectoryClient):
         directory_client.get_directory_properties()
     except ResourceNotFoundError as error:
         logger.error(type(error).__name__, error)
-        raise HTTPException(status_code=HTTPStatus.NOT_FOUND,
-                            detail='The given dataset doesnt exist') from error
+        raise HTTPException(status_code=error.status_code,
+                            detail=f'The given dataset doesnt exist: {error}') from error
 
 
 def __get_path_for_generic_file(file_date: date, guid: str, filesystem_client: FileSystemClient) -> str:
@@ -148,8 +148,9 @@ def __get_path_for_generic_file(file_date: date, guid: str, filesystem_client: F
         files = filesystem_client.get_paths(path=path)
         file = files.next()
     except ResourceNotFoundError as error:
-        raise HTTPException(status_code=HTTPStatus.NOT_FOUND,
-                            detail='Data doesnt exist for the given date') from error
+        logger.error(type(error).__name__, error)
+        raise HTTPException(status_code=error.status_code,
+                            detail=f'Data doesnt exist for the given date: {error}') from error
 
     filename = os.path.relpath(file.name, guid)  # we remove GUID from the path
 
@@ -161,10 +162,10 @@ def __download_file(filename: str, directory_client: DataLakeDirectoryClient) ->
     try:
         downloaded_file = file_client.download_file()
         return downloaded_file
-    except Exception as error:
+    except HttpResponseError as error:
         logger.error(type(error).__name__, error)
-        raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
-                            detail='File could not be downloaded') from error
+        raise HTTPException(status_code=error.status_code,
+                            detail=f'File could not be downloaded: {error}') from error
 
 
 def __get_filesystem_client(token: str) -> FileSystemClient:
