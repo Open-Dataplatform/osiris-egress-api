@@ -40,6 +40,10 @@ async def test_connection(guid: str, client_id: str = Header(None), client_secre
     Endpoint for Grafana connectivity test. This checks if the GUID folder exist and the client_id
     and client_secret are valid.
     """
+    if not guid or not client_id or not client_secret:
+        message = 'One or more of the values (GUID, client-id or client-secret) is missing.'
+        logger.debug(message)
+        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=message)
 
     logger.debug('Grafana root requested for GUID %s', guid)
 
@@ -240,9 +244,10 @@ async def __get_directory_client(guid: str, client_id: str, client_secret: str) 
     try:
         await directory_client.get_directory_properties()  # Test if the directory exist otherwise return error.
     except ResourceNotFoundError as error:
-        logger.error(type(error).__name__, error)
-        raise HTTPException(status_code=HTTPStatus.NOT_FOUND,
-                            detail='The given dataset doesnt exist') from error
+        message = f'({type(error).__name__}) The given dataset doesnt exist: {error}'
+        logger.error(message)
+        raise HTTPException(status_code=error.status_code,
+                            detail=message) from error
 
     return directory_client
 
@@ -328,10 +333,16 @@ async def __get_file_client(directory_client: DataLakeDirectoryClient, path):
 
 
 async def __get_grafana_settings(directory_client: DataLakeDirectoryClient) -> Dict:
-    file_client = directory_client.get_file_client('grafana_settings.json')
-    downloaded_file = await file_client.download_file()
-    settings_data = await downloaded_file.readall()
-    return json.loads(settings_data)
+    try:
+        file_client = directory_client.get_file_client('grafana_settings1.json')
+        downloaded_file = await file_client.download_file()
+        settings_data = await downloaded_file.readall()
+        return json.loads(settings_data)
+    except ResourceNotFoundError as error:
+        message = f'({type(error).__name__}) Problems downloading grafana_setting.json: {error}'
+        logger.error(message)
+        raise HTTPException(status_code=error.status_code,
+                            detail=message) from error
 
 
 async def __filter_with_adhoc_filters(directory_client: DataLakeDirectoryClient,
@@ -346,8 +357,9 @@ async def __filter_with_adhoc_filters(directory_client: DataLakeDirectoryClient,
         elif key_type == "number":
             data_df = await __filter_with_adhoc_filter_number(adhoc_filter, data_df)
         else:
+            logger.debug('Unknown key type. Supported types are "text" and "number.')
             raise HTTPException(status_code=HTTPStatus.BAD_REQUEST,
-                                detail='Unknown key type. Supported types are "text" and "number"')
+                                detail='Unknown key type. Supported types are "text" and "number."')
 
     return data_df
 
@@ -356,6 +368,7 @@ async def __filter_with_adhoc_filter_number(adhoc_filter, data_df):
     try:
         value = float(adhoc_filter.value)
     except Exception as error:
+        logger.debug('Value been used in filter is not a number. The user has not entered a number value.')
         raise HTTPException(status_code=HTTPStatus.BAD_REQUEST,
                             detail='Value not a number') from error
     if adhoc_filter.operator == "=":
@@ -367,7 +380,8 @@ async def __filter_with_adhoc_filter_number(adhoc_filter, data_df):
     elif adhoc_filter.operator == "<":
         data_df = data_df.loc[data_df[adhoc_filter.key] < value]
     else:
-        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail='Operator not supported for filter')
+        logger.debug('Operator not supported for number values. The user has chosen an illegal operator in Grafana.')
+        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail='Operator not supported for number values.')
     return data_df
 
 
@@ -387,7 +401,8 @@ async def __filter_with_adhoc_filter_string(adhoc_filter, data_df):
             raise HTTPException(status_code=HTTPStatus.BAD_REQUEST,
                                 detail='Malformed regular expression') from error
     else:
-        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail='Operator not supported for filter')
+        logger.debug('Operator not supported for string values. The user has chosen an illegal operator in Grafana.')
+        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail='Operator not supported for string values.')
     return data_df
 
 
@@ -396,4 +411,5 @@ def __find_key_type(tags: List[Dict], tag_key):
         if tag['text'] == tag_key:
             return tag['type']
 
-    raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail='Unknown key')
+    logger.debug('Could not find type because key is unknown.')
+    raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail='Could not find type because key is unknown.')

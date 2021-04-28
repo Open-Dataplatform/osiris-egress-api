@@ -72,7 +72,7 @@ async def download_file(guid: str,
             with tracer.start_active_span('check_directory_exists', child_of=span):
                 __check_directory_exist(directory_client)
             with tracer.start_active_span('download_file', child_of=span):
-                path = __get_path_for_generic_file(file_date, guid, filesystem_client)
+                path = __get_path_for_arbritary_file(file_date, guid, filesystem_client)
                 stream = __download_file(path, directory_client)
 
             return StreamingResponse(stream.chunks(), media_type='application/octet-stream')
@@ -89,7 +89,7 @@ async def download_jao_data(guid: str,
     Returns the an appended list of all JSON data.
     """
     async def download(download_date: date, filesystem_client_local, directory_client_local):
-        path = __get_path_for_generic_file(download_date, guid, filesystem_client_local)
+        path = __get_path_for_arbritary_file(download_date, guid, filesystem_client_local)
         stream = __download_file(path, directory_client_local)
 
         json_data = json.loads(stream.readall())
@@ -139,21 +139,21 @@ def __check_directory_exist(directory_client: DataLakeDirectoryClient):
     try:
         directory_client.get_directory_properties()
     except ResourceNotFoundError as error:
-        logger.error(type(error).__name__, error)
-        raise HTTPException(status_code=error.status_code,
-                            detail=f'The given dataset doesnt exist: {error}') from error
+        message = f'({type(error).__name__}) The given dataset doesnt exist: {error}'
+        logger.error(message)
+        raise HTTPException(status_code=error.status_code, detail=message) from error
 
 
-def __get_path_for_generic_file(file_date: date, guid: str, filesystem_client: FileSystemClient) -> str:
+def __get_path_for_arbritary_file(file_date: date, guid: str, filesystem_client: FileSystemClient) -> str:
     path = f'{guid}/year={file_date.year:02d}/month={file_date.month:02d}/day={file_date.day:02d}'
 
     try:
         files = filesystem_client.get_paths(path=path)
         file = files.next()
     except ResourceNotFoundError as error:
-        logger.error(type(error).__name__, error)
-        raise HTTPException(status_code=error.status_code,
-                            detail=f'Data doesnt exist for the given date: {error}') from error
+        message = f'({type(error).__name__}) Data doesnt exist for the given date: {error}'
+        logger.error(message)
+        raise HTTPException(status_code=error.status_code, detail=message) from error
 
     filename = os.path.relpath(file.name, guid)  # we remove GUID from the path
 
@@ -166,9 +166,9 @@ def __download_file(filename: str, directory_client: DataLakeDirectoryClient) ->
         downloaded_file = file_client.download_file()
         return downloaded_file
     except HttpResponseError as error:
-        logger.error(type(error).__name__, error)
-        raise HTTPException(status_code=error.status_code,
-                            detail=f'File could not be downloaded: {error}') from error
+        message = f'({type(error).__name__}) File could not be downloaded: {error}'
+        logger.error(message)
+        raise HTTPException(status_code=error.status_code, detail=message) from error
 
 
 def __get_filesystem_client(token: str) -> FileSystemClient:
