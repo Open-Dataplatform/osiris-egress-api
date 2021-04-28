@@ -17,6 +17,7 @@ metadata:
     {{ $key }}: {{ $value | quote }}
   {{- end }}
 spec:
+  revisionHistoryLimit: {{ .Values.deployment.revisionHistoryLimit}}
   replicas: {{ .Values.deployment.replicas }}
   selector:
     matchLabels:
