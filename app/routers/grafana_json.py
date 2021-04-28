@@ -17,7 +17,7 @@ from osiris.core.azure_client_authorization import ClientAuthorization
 from pandas import DataFrame
 
 from azure.storage.filedatalake.aio import DataLakeDirectoryClient, DataLakeFileClient
-from azure.core.exceptions import ResourceNotFoundError
+from azure.core.exceptions import ResourceNotFoundError, HttpResponseError
 
 from ..dependencies import Configuration, Metric, TracerClass
 from ..schemas.json_request import QueryRequest, TagValuesRequest
@@ -246,8 +246,7 @@ async def __get_directory_client(guid: str, client_id: str, client_secret: str) 
     except ResourceNotFoundError as error:
         message = f'({type(error).__name__}) The given dataset doesnt exist: {error}'
         logger.error(message)
-        raise HTTPException(status_code=error.status_code,
-                            detail=message) from error
+        raise HTTPException(status_code=error.status_code, detail=message) from error
 
     return directory_client
 
@@ -284,8 +283,20 @@ async def __download_files(timeslot_chunk: List[datetime],
             if not file_client:
                 return None
 
-            downloaded_file = await file_client.download_file()
-            file_json = pd.read_json(await downloaded_file.readall())
+            try:
+                downloaded_file = await file_client.download_file()
+                data = await downloaded_file.readall()
+            except HttpResponseError as error:
+                message = f'({type(error).__name__}) Problems downloading data file: {error}'
+                logger.error(message)
+                raise HTTPException(status_code=error.status_code, detail=message) from error
+
+            try:
+                file_json = pd.read_json(data)
+            except ValueError as error:
+                message = f'({type(error).__name__}) File is not JSON formatted: {error}'
+                logger.error(message)
+                raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR, detail=message) from error
 
             return file_json
 
@@ -327,6 +338,7 @@ async def __get_file_client(directory_client: DataLakeDirectoryClient, path):
     try:
         await file_client.get_file_properties()
     except ResourceNotFoundError:
+        # We return None to indicate that the file doesnt exist.
         return None
 
     return file_client
@@ -334,15 +346,14 @@ async def __get_file_client(directory_client: DataLakeDirectoryClient, path):
 
 async def __get_grafana_settings(directory_client: DataLakeDirectoryClient) -> Dict:
     try:
-        file_client = directory_client.get_file_client('grafana_settings1.json')
+        file_client = directory_client.get_file_client('grafana_settings.json')
         downloaded_file = await file_client.download_file()
         settings_data = await downloaded_file.readall()
         return json.loads(settings_data)
     except ResourceNotFoundError as error:
         message = f'({type(error).__name__}) Problems downloading grafana_setting.json: {error}'
         logger.error(message)
-        raise HTTPException(status_code=error.status_code,
-                            detail=message) from error
+        raise HTTPException(status_code=error.status_code, detail=message) from error
 
 
 async def __filter_with_adhoc_filters(directory_client: DataLakeDirectoryClient,
@@ -411,5 +422,5 @@ def __find_key_type(tags: List[Dict], tag_key):
         if tag['text'] == tag_key:
             return tag['type']
 
-    logger.debug('Could not find type because key is unknown.')
+    logger.debug('Could not find type because key is unknown. This must be defined in the grafana_settings.json')
     raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail='Could not find type because key is unknown.')
