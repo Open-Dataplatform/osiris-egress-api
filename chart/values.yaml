@@ -18,6 +18,13 @@ deployment:
     initialDelaySeconds: 15
     timeoutSeconds: 2
     periodSeconds: 30
+  resources:
+    requests:
+      cpu: 750m
+      memory: 768Mi
+    limits:
+      cpu: 1000m
+      memory: 1024Mi
 
 service:
   type: ClusterIP
