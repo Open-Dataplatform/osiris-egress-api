@@ -78,14 +78,14 @@ async def download_file(guid: str,
             return StreamingResponse(stream.chunks(), media_type='application/octet-stream')
 
 
-@router.get('/{guid}/jao', response_class=StreamingResponse)
+@router.get('/{guid}/timeperiod', response_class=StreamingResponse)
 @Metric.histogram
-async def download_jao_data(guid: str,
-                            from_date: date,
-                            to_date: date = datetime.utcnow().date(),
-                            token: str = Security(access_token_header)) -> StreamingResponse:
+async def download_timeperiod(guid: str,
+                              from_date: date,
+                              to_date: date = datetime.utcnow().date(),
+                              token: str = Security(access_token_header)) -> StreamingResponse:
     """
-    Download JAO data endpoint with data from from_date to to_date.
+    Download JSON endpoint with data from from_date to to_date (time period).
     Returns the an appended list of all JSON data.
     """
     async def download(download_date: date, filesystem_client_local, directory_client_local):
