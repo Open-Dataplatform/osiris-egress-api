@@ -5,6 +5,9 @@ import json
 import os
 from datetime import datetime, date
 import asyncio
+from http import HTTPStatus
+from io import StringIO
+
 from dateutil.relativedelta import relativedelta
 from fastapi import APIRouter, HTTPException, Security
 from fastapi.security.api_key import APIKeyHeader
@@ -92,7 +95,12 @@ async def download_timeperiod(guid: str,
         path = __get_path_for_arbritary_file(download_date, guid, filesystem_client_local)
         stream = __download_file(path, directory_client_local)
 
-        json_data = json.loads(stream.readall())
+        try:
+            json_data = json.loads(stream.readall())
+        except ValueError as error:
+            message = f'({type(error).__name__}) File is not JSON formatted: {error}'
+            logger.error(message)
+            raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR, detail=message) from error
 
         return json_data
 
@@ -115,7 +123,8 @@ async def download_timeperiod(guid: str,
     for response in responses:
         concat_response.append(response)
 
-    return StreamingResponse(iter(json.dumps(concat_response)), media_type='application/octet-stream')
+    stream = StringIO(json.dumps(concat_response))
+    return StreamingResponse(stream, media_type='application/octet-stream')
 
 
 @router.get('/{guid}/retrieve_state', response_class=StreamingResponse)
