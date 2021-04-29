@@ -116,12 +116,14 @@ async def download_timeperiod(guid: str,
             fetch_dates.append(fetch_date)
             fetch_date += relativedelta(months=+1)
 
-        responses = await asyncio.gather(*[download(fetch_date, filesystem_client, directory_client)
-                                           for fetch_date in fetch_dates])
+        concat_response = []
+        chunk_size = 200
+        for i in range(0, len(fetch_dates), chunk_size):
+            responses = await asyncio.gather(*[download(fetch_date, filesystem_client, directory_client)
+                                               for fetch_date in fetch_dates[i:i+chunk_size]])
 
-    concat_response = []
-    for response in responses:
-        concat_response.append(response)
+        for response in responses:
+            concat_response.append(response)
 
     stream = StringIO(json.dumps(concat_response))
     return StreamingResponse(stream, media_type='application/octet-stream')
