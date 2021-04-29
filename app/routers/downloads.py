@@ -33,7 +33,7 @@ tracer = TracerClass().get_tracer()
 @router.get('/{guid}/json', response_class=StreamingResponse)
 @Metric.histogram
 async def download_json_file(guid: str,
-                             file_date: date = datetime.utcnow().date(),
+                             file_date: datetime = datetime.utcnow(),
                              token: str = Security(access_token_header)) -> StreamingResponse:
     """
     Download JSON file from data storage from the given date (UTC). This endpoint expects data to be
@@ -58,7 +58,7 @@ async def download_json_file(guid: str,
 @router.get('/{guid}', response_class=StreamingResponse)
 @Metric.histogram
 async def download_file(guid: str,
-                        file_date: date = datetime.utcnow().date(),
+                        file_date: datetime = datetime.utcnow(),
                         token: str = Security(access_token_header)) -> StreamingResponse:
     """
     Download file from data storage from the given date (UTC). This endpoint expects data to be
@@ -84,14 +84,14 @@ async def download_file(guid: str,
 @router.get('/{guid}/timeperiod', response_class=StreamingResponse)
 @Metric.histogram
 async def download_timeperiod(guid: str,
-                              from_date: date,
-                              to_date: date = datetime.utcnow().date(),
+                              from_date: datetime,
+                              to_date: datetime = datetime.utcnow(),
                               token: str = Security(access_token_header)) -> StreamingResponse:
     """
     Download JSON endpoint with data from from_date to to_date (time period).
     Returns the an appended list of all JSON data.
     """
-    async def download(download_date: date, filesystem_client_local, directory_client_local):
+    async def download(download_date: datetime, filesystem_client_local, directory_client_local):
         path = __get_path_for_arbritary_file(download_date, guid, filesystem_client_local)
         stream = __download_file(path, directory_client_local)
 
@@ -138,7 +138,7 @@ def __check_directory_exist(directory_client: DataLakeDirectoryClient):
         raise HTTPException(status_code=error.status_code, detail=message) from error
 
 
-def __get_path_for_arbritary_file(file_date: date, guid: str, filesystem_client: FileSystemClient) -> str:
+def __get_path_for_arbritary_file(file_date: datetime, guid: str, filesystem_client: FileSystemClient) -> str:
     path = f'{guid}/year={file_date.year:02d}/month={file_date.month:02d}/day={file_date.day:02d}'
 
     try:
