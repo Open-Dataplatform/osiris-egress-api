@@ -3,10 +3,12 @@ Contains endpoints for downloading data to the DataPlatform.
 """
 import json
 import os
-from datetime import datetime, date
+from datetime import datetime
 import asyncio
 from http import HTTPStatus
 from io import StringIO
+from typing import Dict, List, Optional
+from enum import Enum
 
 from dateutil.relativedelta import relativedelta
 from fastapi import APIRouter, HTTPException, Security
@@ -19,6 +21,8 @@ from osiris.core.azure_client_authorization import AzureCredential
 
 from ..dependencies import Configuration, Metric, TracerClass
 
+
+TimeResolution = Enum('TimeResolution', 'NONE YEAR MONTH DAY HOUR MINUTE')
 configuration = Configuration(__file__)
 config = configuration.get_config()
 logger = configuration.get_logger()
@@ -28,31 +32,6 @@ access_token_header = APIKeyHeader(name='Authorization', auto_error=True)
 router = APIRouter(tags=['downloads'])
 
 tracer = TracerClass().get_tracer()
-
-
-@router.get('/{guid}/json', response_class=StreamingResponse)
-@Metric.histogram
-async def download_json_file(guid: str,
-                             file_date: datetime = datetime.utcnow(),
-                             token: str = Security(access_token_header)) -> StreamingResponse:
-    """
-    Download JSON file from data storage from the given date (UTC). This endpoint expects data to be
-    stored in {guid}/year={date.year:02d}/month={date.month:02d}/day={date.day:02d}/data.json'.
-    """
-    logger.debug('download json file requested')
-
-    with tracer.start_span('download_json_file') as span:
-        with __get_filesystem_client(token) as filesystem_client:
-            span.set_tag('guid', guid)
-            with tracer.start_active_span('get_directory_client', child_of=span):
-                directory_client = filesystem_client.get_directory_client(guid)
-            with tracer.start_active_span('check_directory_exists', child_of=span):
-                __check_directory_exist(directory_client)
-            with tracer.start_active_span('download_file', child_of=span):
-                path = f'year={file_date.year:02d}/month={file_date.month:02d}/day={file_date.day:02d}/data.json'
-                stream = __download_file(path, directory_client)
-
-            return StreamingResponse(stream.chunks(), media_type='application/octet-stream')
 
 
 @router.get('/{guid}', response_class=StreamingResponse)
@@ -81,18 +60,20 @@ async def download_file(guid: str,
             return StreamingResponse(stream.chunks(), media_type='application/octet-stream')
 
 
-@router.get('/{guid}/timeperiod', response_class=StreamingResponse)
+@router.get('/{guid}/json', response_class=StreamingResponse)
 @Metric.histogram
-async def download_timeperiod(guid: str,
-                              from_date: datetime,
-                              to_date: datetime = datetime.utcnow(),
-                              token: str = Security(access_token_header)) -> StreamingResponse:
+async def download_json_file(guid: str,
+                             from_date: datetime = datetime.utcnow(),
+                             to_date: Optional[datetime] = None,
+                             time_resolution: str = "DAY",
+                             token: str = Security(access_token_header)) -> StreamingResponse:
     """
     Download JSON endpoint with data from from_date to to_date (time period).
-    Returns the an appended list of all JSON data.
+    If form_date is left out, current UTC time is used.
+    If to_date is left out, only one data point is retrieved.
     """
-    async def download(download_date: datetime, filesystem_client_local, directory_client_local):
-        path = __get_path_for_arbritary_file(download_date, guid, filesystem_client_local)
+    async def download(download_date: datetime, directory_client_local, time_resolution_local):
+        path = __get_file_path_with_respect_to_time_resolution(time_resolution_local, download_date)
         stream = __download_file(path, directory_client_local)
 
         try:
@@ -108,22 +89,19 @@ async def download_timeperiod(guid: str,
 
     with __get_filesystem_client(token) as filesystem_client:
         directory_client = filesystem_client.get_directory_client(guid)
+
         __check_directory_exist(directory_client)
-        # We store data the first every month - as data does not change
-        fetch_date = from_date.replace(day=1)
-        fetch_dates = []
-        while fetch_date < to_date:
-            fetch_dates.append(fetch_date)
-            fetch_date += relativedelta(months=+1)
+
+        download_dates = __get_all_dates_to_download(from_date, to_date, time_resolution)
 
         concat_response = []
         chunk_size = 200
-        for i in range(0, len(fetch_dates), chunk_size):
-            responses = await asyncio.gather(*[download(fetch_date, filesystem_client, directory_client)
-                                               for fetch_date in fetch_dates[i:i+chunk_size]])
+        for i in range(0, len(download_dates), chunk_size):
+            responses = await asyncio.gather(*[download(download_date, directory_client, time_resolution)
+                                               for download_date in download_dates[i:i + chunk_size]])
 
-        for response in responses:
-            concat_response.append(response)
+            for response in responses:
+                concat_response += response
 
     stream = StringIO(json.dumps(concat_response))
     return StreamingResponse(stream, media_type='application/octet-stream')
@@ -171,3 +149,60 @@ def __get_filesystem_client(token: str) -> FileSystemClient:
     credential = AzureCredential(token)
 
     return FileSystemClient(account_url, filesystem_name, credential=credential)
+
+
+async def __get_settings(directory_client: DataLakeDirectoryClient) -> Dict:
+    try:
+        file_client = directory_client.get_file_client('settings.json')
+        downloaded_file = file_client.download_file()
+        settings_data = downloaded_file.readall()
+        return json.loads(settings_data)
+    except ResourceNotFoundError as error:
+        message = f'({type(error).__name__}) Problems downloading setting.json: {error}'
+        logger.error(message)
+        raise HTTPException(status_code=error.status_code, detail=message) from error
+
+
+def __get_file_path_with_respect_to_time_resolution(time_resolution: str, date: datetime) -> str:
+    if time_resolution == TimeResolution.YEAR.name:
+        return f'year={date.year}/data.json'
+    if time_resolution == TimeResolution.MONTH.name:
+        return f'year={date.year}/month={date.month:02d}/data.json'
+    if time_resolution == TimeResolution.DAY.name:
+        return f'year={date.year}/month={date.month:02d}/day={date.day:02d}/data.json'
+    if time_resolution == TimeResolution.HOUR.name:
+        return f'year={date.year}/month={date.month:02d}/day={date.day:02d}/' + \
+               f'hour={date.hour:02d}/data.json'
+    if time_resolution == TimeResolution.MINUTE.name:
+        return f'year={date.year}/month={date.month:02d}/day={date.day:02d}/' + \
+               f'hour={date.hour:02d}/minute={date.minute:02d}/data.json'
+
+    message = '(ValueError) Unknown time resolution giving.'
+    logger.error(message)
+    raise ValueError(message)
+
+
+def __get_all_dates_to_download(from_date: datetime, to_date: Optional[datetime], time_resolution: str) -> List:
+    # Get all the dates we need
+    if time_resolution == TimeResolution.YEAR.name:
+        delta_time = relativedelta(years=+1)
+    elif time_resolution == TimeResolution.MONTH.name:
+        delta_time = relativedelta(months=+1)
+    elif time_resolution == TimeResolution.DAY.name:
+        delta_time = relativedelta(days=+1)
+    elif time_resolution == TimeResolution.HOUR.name:
+        delta_time = relativedelta(hours=+1)
+    elif time_resolution == TimeResolution.MINUTE.name:
+        delta_time = relativedelta(minutes=+1)
+    else:
+        message = '(ValueError) Unknown time resolution given .'
+        logger.error(message)
+        raise ValueError(message)
+    download_dates = []
+    if to_date is None:
+        download_dates.append(from_date)
+    else:
+        while from_date < to_date:
+            download_dates.append(from_date)
+            from_date += delta_time
+    return download_dates
