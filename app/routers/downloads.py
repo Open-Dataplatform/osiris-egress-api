@@ -8,7 +8,6 @@ import asyncio
 from http import HTTPStatus
 from io import StringIO
 from typing import Dict, List, Optional
-from enum import Enum
 
 from dateutil.relativedelta import relativedelta
 from fastapi import APIRouter, HTTPException, Security
@@ -18,11 +17,11 @@ from fastapi.responses import StreamingResponse
 from azure.core.exceptions import ResourceNotFoundError, HttpResponseError
 from azure.storage.filedatalake import DataLakeDirectoryClient, FileSystemClient, StorageStreamDownloader
 from osiris.core.azure_client_authorization import AzureCredential
+from osiris.core.enums import TimeResolution
 
 from ..dependencies import Configuration, Metric, TracerClass
 
 
-TimeResolution = Enum('TimeResolution', 'NONE YEAR MONTH DAY HOUR MINUTE')
 configuration = Configuration(__file__)
 config = configuration.get_config()
 logger = configuration.get_logger()
@@ -72,7 +71,7 @@ async def download_json_file(guid: str,
     If form_date is left out, current UTC time is used.
     If to_date is left out, only one data point is retrieved.
     """
-    async def download(download_date: datetime, directory_client_local, time_resolution_local):
+    async def download(download_date: datetime, directory_client_local, time_resolution_local: TimeResolution):
         path = __get_file_path_with_respect_to_time_resolution(time_resolution_local, download_date)
         stream = __download_file(path, directory_client_local)
 
@@ -92,12 +91,13 @@ async def download_json_file(guid: str,
 
         __check_directory_exist(directory_client)
 
-        download_dates = __get_all_dates_to_download(from_date, to_date, time_resolution)
+        time_resolution_enum = TimeResolution[time_resolution]
+        download_dates = __get_all_dates_to_download(from_date, to_date, time_resolution_enum)
 
         concat_response = []
         chunk_size = 200
         for i in range(0, len(download_dates), chunk_size):
-            responses = await asyncio.gather(*[download(download_date, directory_client, time_resolution)
+            responses = await asyncio.gather(*[download(download_date, directory_client, time_resolution_enum)
                                                for download_date in download_dates[i:i + chunk_size]])
 
             for response in responses:
@@ -163,17 +163,17 @@ async def __get_settings(directory_client: DataLakeDirectoryClient) -> Dict:
         raise HTTPException(status_code=error.status_code, detail=message) from error
 
 
-def __get_file_path_with_respect_to_time_resolution(time_resolution: str, date: datetime) -> str:
-    if time_resolution == TimeResolution.YEAR.name:
+def __get_file_path_with_respect_to_time_resolution(time_resolution: TimeResolution, date: datetime) -> str:
+    if time_resolution == TimeResolution.YEAR:
         return f'year={date.year}/data.json'
-    if time_resolution == TimeResolution.MONTH.name:
+    if time_resolution == TimeResolution.MONTH:
         return f'year={date.year}/month={date.month:02d}/data.json'
-    if time_resolution == TimeResolution.DAY.name:
+    if time_resolution == TimeResolution.DAY:
         return f'year={date.year}/month={date.month:02d}/day={date.day:02d}/data.json'
-    if time_resolution == TimeResolution.HOUR.name:
+    if time_resolution == TimeResolution.HOUR:
         return f'year={date.year}/month={date.month:02d}/day={date.day:02d}/' + \
                f'hour={date.hour:02d}/data.json'
-    if time_resolution == TimeResolution.MINUTE.name:
+    if time_resolution == TimeResolution.MINUTE:
         return f'year={date.year}/month={date.month:02d}/day={date.day:02d}/' + \
                f'hour={date.hour:02d}/minute={date.minute:02d}/data.json'
 
@@ -182,17 +182,18 @@ def __get_file_path_with_respect_to_time_resolution(time_resolution: str, date: 
     raise ValueError(message)
 
 
-def __get_all_dates_to_download(from_date: datetime, to_date: Optional[datetime], time_resolution: str) -> List:
+def __get_all_dates_to_download(from_date: datetime, to_date: Optional[datetime],
+                                time_resolution: TimeResolution) -> List:
     # Get all the dates we need
-    if time_resolution == TimeResolution.YEAR.name:
+    if time_resolution == TimeResolution.YEAR:
         delta_time = relativedelta(years=+1)
-    elif time_resolution == TimeResolution.MONTH.name:
+    elif time_resolution == TimeResolution.MONTH:
         delta_time = relativedelta(months=+1)
-    elif time_resolution == TimeResolution.DAY.name:
+    elif time_resolution == TimeResolution.DAY:
         delta_time = relativedelta(days=+1)
-    elif time_resolution == TimeResolution.HOUR.name:
+    elif time_resolution == TimeResolution.HOUR:
         delta_time = relativedelta(hours=+1)
-    elif time_resolution == TimeResolution.MINUTE.name:
+    elif time_resolution == TimeResolution.MINUTE:
         delta_time = relativedelta(minutes=+1)
     else:
         message = '(ValueError) Unknown time resolution given .'
