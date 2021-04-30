@@ -53,7 +53,7 @@ async def download_file(guid: str,
             with tracer.start_active_span('check_directory_exists', child_of=span):
                 __check_directory_exist(directory_client)
             with tracer.start_active_span('download_file', child_of=span):
-                path = __get_path_for_arbritary_file(file_date, guid, filesystem_client)
+                path = __get_path_for_arbitrary_file(file_date, guid, filesystem_client)
                 stream = __download_file(path, directory_client)
 
             return StreamingResponse(stream.chunks(), media_type='application/octet-stream')
@@ -116,7 +116,7 @@ def __check_directory_exist(directory_client: DataLakeDirectoryClient):
         raise HTTPException(status_code=error.status_code, detail=message) from error
 
 
-def __get_path_for_arbritary_file(file_date: datetime, guid: str, filesystem_client: FileSystemClient) -> str:
+def __get_path_for_arbitrary_file(file_date: datetime, guid: str, filesystem_client: FileSystemClient) -> str:
     path = f'{guid}/year={file_date.year:02d}/month={file_date.month:02d}/day={file_date.day:02d}'
 
     try:
