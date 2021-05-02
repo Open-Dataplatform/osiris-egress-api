@@ -99,14 +99,12 @@ async def query(guid: str, request: QueryRequest,
             grafana_settings = await __get_grafana_settings(directory_client)
         from_date = pd.Timestamp(request.range['from']).to_pydatetime()
         to_date = pd.Timestamp(request.range['to']).to_pydatetime()
-        time_resolution = TimeResolution[grafana_settings['time_resolution']]
-        date_key_field = grafana_settings['date_key_field']
         span.set_tag('request_from_date', str(from_date))
         span.set_tag('request_to_date', str(to_date))
 
         with tracer.start_span('retrieve_data', child_of=span) as retrieve_data_span:
-            data_df = await __retrieve_data(from_date, to_date, time_resolution,
-                                            date_key_field, directory_client, retrieve_data_span)
+            data_df = await __retrieve_data(from_date, to_date, grafana_settings,
+                                            directory_client, retrieve_data_span)
         with tracer.start_span('filter_with_adhoc_filters', child_of=span):
             data_df = await __filter_with_adhoc_filters(directory_client, data_df, request.adhocFilters)
 
@@ -278,8 +276,8 @@ def __arrange_time_range_in_dict(from_date: datetime, to_date: datetime) -> Dict
     return time_range_dict
 
 
-async def download(timeslot: datetime,  time_resolution: TimeResolution, directory_client: DataLakeDirectoryClient,
-                   retrieve_data_span_local: Span) -> Optional[DataFrame]:
+async def __download(timeslot: datetime, time_resolution: TimeResolution, directory_client: DataLakeDirectoryClient,
+                     retrieve_data_span_local: Span) -> Optional[DataFrame]:
     with tracer.start_span('retrieve_data_download', child_of=retrieve_data_span_local) as local_span:
         path = get_file_path_with_respect_to_time_resolution(timeslot, time_resolution, 'data.json')
         local_span.set_tag('path', path)
@@ -310,7 +308,7 @@ async def __download_files(timeslot_chunk: List[datetime],
                            time_resolution: TimeResolution,
                            directory_client: DataLakeDirectoryClient,
                            retrieve_data_span: Span) -> List:
-    return await asyncio.gather(*[download(timeslot, time_resolution, directory_client, retrieve_data_span)
+    return await asyncio.gather(*[__download(timeslot, time_resolution, directory_client, retrieve_data_span)
                                   for timeslot in timeslot_chunk])
 
 
@@ -320,17 +318,18 @@ def __split_into_chunks(lst, chunk_size):
 
 
 async def __retrieve_data(from_date: datetime, to_date: datetime,
-                          time_resolution: TimeResolution,
-                          date_key_field: str,
+                          grafana_settings: Dict,
                           directory_client: DataLakeDirectoryClient,
                           retrieve_data_span: Span) -> Optional[DataFrame]:
 
+    time_resolution = TimeResolution[grafana_settings['time_resolution']]
+    date_key_field = grafana_settings['date_key_field']
     time_range = __get_all_dates_to_download(from_date, to_date, time_resolution)
 
     data = None
     # We need to divide the timeslots into chunks so we don't hit the limit of asyncio.gather.
     for chunk in __split_into_chunks(time_range, 200):
-        df_list = await __download_files(chunk,  time_resolution, directory_client, retrieve_data_span)
+        df_list = await __download_files(chunk, time_resolution, directory_client, retrieve_data_span)
 
         if all(elem is None for elem in df_list):
             continue
@@ -355,18 +354,18 @@ def __get_all_dates_to_download(from_date: datetime, to_date: datetime,
         return pd.date_range(from_date.strftime("%Y-%m-%d"), from_date.strftime("%Y-%m-%d"), freq='D')
     if time_resolution == TimeResolution.YEAR:
         return pd.date_range(from_date.strftime("%Y-%m-%d"), to_date.strftime("%Y-%m-%d"), freq='Y')
-    elif time_resolution == TimeResolution.MONTH:
+    if time_resolution == TimeResolution.MONTH:
         return pd.date_range(from_date.strftime("%Y-%m-%d"), to_date.strftime("%Y-%m-%d"), freq='M')
-    elif time_resolution == TimeResolution.DAY:
+    if time_resolution == TimeResolution.DAY:
         return pd.date_range(from_date.strftime("%Y-%m-%d"), to_date.strftime("%Y-%m-%d"), freq='D')
-    elif time_resolution == TimeResolution.HOUR:
+    if time_resolution == TimeResolution.HOUR:
         return pd.date_range(from_date.strftime("%Y-%m-%d"), to_date.strftime("%Y-%m-%d"), freq='H')
-    elif time_resolution == TimeResolution.MINUTE:
+    if time_resolution == TimeResolution.MINUTE:
         return pd.date_range(from_date.strftime("%Y-%m-%d"), to_date.strftime("%Y-%m-%d"), freq='T')
-    else:
-        message = '(ValueError) Unknown time resolution given .'
-        logger.error(message)
-        raise ValueError(message)
+
+    message = '(ValueError) Unknown time resolution given .'
+    logger.error(message)
+    raise ValueError(message)
 
 
 async def __get_file_client(directory_client: DataLakeDirectoryClient, path):

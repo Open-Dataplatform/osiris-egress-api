@@ -63,7 +63,7 @@ async def download_file(guid: str,
 
 @router.get('/{guid}/json', response_class=StreamingResponse)
 @Metric.histogram
-async def download_json_file(guid: str,
+async def download_json_file(guid: str,  # pylint: disable=too-many-locals
                              from_date: datetime = datetime.utcnow(),
                              to_date: Optional[datetime] = None,
                              time_resolution: str = "DAY",
