@@ -7,9 +7,9 @@ from typing import Dict
 from http import HTTPStatus
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from osiris.core.configuration import Configuration
 from starlette_exporter import PrometheusMiddleware, handle_metrics
 
-from .dependencies import Configuration
 from .routers import grafana_json, downloads
 
 configuration = Configuration(__file__)

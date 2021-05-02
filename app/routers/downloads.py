@@ -17,9 +17,11 @@ from fastapi.responses import StreamingResponse
 from azure.core.exceptions import ResourceNotFoundError, HttpResponseError
 from azure.storage.filedatalake import DataLakeDirectoryClient, FileSystemClient, StorageStreamDownloader
 from osiris.core.azure_client_authorization import AzureCredential
+from osiris.core.configuration import Configuration
 from osiris.core.enums import TimeResolution
+from osiris.core.io import get_file_path_with_respect_to_time_resolution
 
-from ..dependencies import Configuration, Metric, TracerClass
+from ..dependencies import Metric, TracerClass
 
 
 configuration = Configuration(__file__)
@@ -72,7 +74,7 @@ async def download_json_file(guid: str,
     If to_date is left out, only one data point is retrieved.
     """
     async def download(download_date: datetime, directory_client_local, time_resolution_local: TimeResolution):
-        path = __get_file_path_with_respect_to_time_resolution(time_resolution_local, download_date)
+        path = get_file_path_with_respect_to_time_resolution(download_date, time_resolution_local, 'data.json')
         stream = __download_file(path, directory_client_local)
 
         try:
@@ -161,25 +163,6 @@ async def __get_settings(directory_client: DataLakeDirectoryClient) -> Dict:
         message = f'({type(error).__name__}) Problems downloading setting.json: {error}'
         logger.error(message)
         raise HTTPException(status_code=error.status_code, detail=message) from error
-
-
-def __get_file_path_with_respect_to_time_resolution(time_resolution: TimeResolution, date: datetime) -> str:
-    if time_resolution == TimeResolution.YEAR:
-        return f'year={date.year}/data.json'
-    if time_resolution == TimeResolution.MONTH:
-        return f'year={date.year}/month={date.month:02d}/data.json'
-    if time_resolution == TimeResolution.DAY:
-        return f'year={date.year}/month={date.month:02d}/day={date.day:02d}/data.json'
-    if time_resolution == TimeResolution.HOUR:
-        return f'year={date.year}/month={date.month:02d}/day={date.day:02d}/' + \
-               f'hour={date.hour:02d}/data.json'
-    if time_resolution == TimeResolution.MINUTE:
-        return f'year={date.year}/month={date.month:02d}/day={date.day:02d}/' + \
-               f'hour={date.hour:02d}/minute={date.minute:02d}/data.json'
-
-    message = '(ValueError) Unknown time resolution giving.'
-    logger.error(message)
-    raise ValueError(message)
 
 
 def __get_all_dates_to_download(from_date: datetime, to_date: Optional[datetime],
