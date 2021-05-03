@@ -15,6 +15,7 @@ from fastapi.responses import StreamingResponse
 
 from azure.core.exceptions import ResourceNotFoundError, HttpResponseError
 from azure.storage.filedatalake import DataLakeDirectoryClient, FileSystemClient, StorageStreamDownloader
+from jaeger_client import Span
 from osiris.core.azure_client_authorization import AzureCredential
 from osiris.core.configuration import Configuration
 from osiris.core.enums import TimeResolution
@@ -73,32 +74,41 @@ async def download_json_file(guid: str,  # pylint: disable=too-many-locals
     """
     logger.debug('download jao data requested')
 
-    with __get_filesystem_client(token) as filesystem_client:
-        directory_client = filesystem_client.get_directory_client(guid)
+    with tracer.start_span('download_json_file') as span:
+        span.set_tag('guid', guid)
+        with __get_filesystem_client(token) as filesystem_client:
+            with tracer.start_active_span('get_directory_client', child_of=span):
+                directory_client = filesystem_client.get_directory_client(guid)
 
-        __check_directory_exist(directory_client)
+            with tracer.start_active_span('check_directory_exists', child_of=span):
+                __check_directory_exist(directory_client)
 
-        time_resolution_enum = TimeResolution[time_resolution]
-        if to_date:
-            download_dates = __get_all_dates_to_download(from_date, to_date, time_resolution_enum)
-            download_dates = [item.to_pydatetime() for item in download_dates.tolist()]
-        else:
-            download_dates = [from_date]
+            with tracer.start_active_span('retrieve_data', child_of=span) as retrieve_data_span:
+                time_resolution_enum = TimeResolution[time_resolution]
+                if to_date:
+                    download_dates = __get_all_dates_to_download(from_date, to_date, time_resolution_enum)
+                    download_dates = [item.to_pydatetime() for item in download_dates.tolist()]
+                else:
+                    download_dates = [from_date]
 
-        concat_response = []
-        chunk_size = 200
-        for i in range(0, len(download_dates), chunk_size):
-            responses = await asyncio.gather(*[__download(download_date, directory_client, time_resolution_enum)
-                                               for download_date in download_dates[i:i + chunk_size]])
+                concat_response = []
+                chunk_size = 200
+                for i in range(0, len(download_dates), chunk_size):
+                    responses = await asyncio.gather(*[__download(download_date,
+                                                                  directory_client,
+                                                                  time_resolution_enum)
+                                                       for download_date in download_dates[i:i + chunk_size]])
 
-            for response in responses:
-                concat_response += response
+                    for response in responses:
+                        concat_response += response
 
-    stream = StringIO(json.dumps(concat_response))
-    return StreamingResponse(stream, media_type='application/octet-stream')
+        stream = StringIO(json.dumps(concat_response))
+        return StreamingResponse(stream, media_type='application/octet-stream')
 
 
-async def __download(download_date: datetime, directory_client_local, time_resolution_local: TimeResolution):
+async def __download(download_date: datetime,
+                     directory_client_local,
+                     time_resolution_local: TimeResolution):
     path = get_file_path_with_respect_to_time_resolution(download_date, time_resolution_local, 'data.json')
     stream = __download_file(path, directory_client_local)
 
