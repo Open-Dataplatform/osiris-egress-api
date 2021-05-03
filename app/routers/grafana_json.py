@@ -202,7 +202,7 @@ def __dataframe_to_response(data_df: DataFrame, target_type: str, target: str,
 
     if target != 'Raw':
         if freq is not None:
-            orig_tz = data_df.index.tz
+            orig_tz = data_df.tz
             data_df = data_df.tz_convert('UTC').resample(rule=freq, label='right', closed='right') \
                              .mean().tz_convert(orig_tz)
 
