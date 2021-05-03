@@ -106,7 +106,7 @@ async def query(guid: str, request: QueryRequest,
             data_df = await __retrieve_data(from_date, to_date, grafana_settings,
                                             directory_client, retrieve_data_span)
         with tracer.start_span('filter_with_adhoc_filters', child_of=span):
-            data_df = await __filter_with_adhoc_filters(directory_client, data_df, request.adhocFilters)
+            data_df = await __filter_with_adhoc_filters(data_df, request.adhocFilters, grafana_settings)
 
         freq = f'{request.intervalMs}ms'
 
@@ -340,6 +340,9 @@ async def __retrieve_data(from_date: datetime, to_date: datetime,
     if data is None:
         return None
 
+    # Pandas need help recognizing date column if column name doesn't contain date
+    data[date_key_field] = pd.to_datetime(data[date_key_field])
+
     data.set_index(date_key_field, inplace=True)
 
     return data
@@ -368,9 +371,7 @@ async def __get_grafana_settings(directory_client: DataLakeDirectoryClient) -> D
         raise HTTPException(status_code=error.status_code, detail=message) from error
 
 
-async def __filter_with_adhoc_filters(directory_client: DataLakeDirectoryClient,
-                                      data_df: DataFrame, adhoc_filters: List):
-    grafana_settings = await __get_grafana_settings(directory_client)
+async def __filter_with_adhoc_filters(data_df: DataFrame, adhoc_filters: List, grafana_settings: Dict):
 
     for adhoc_filter in adhoc_filters:
         key_type = __find_key_type(grafana_settings['tag_keys'], adhoc_filter.key)
