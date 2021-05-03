@@ -7,9 +7,8 @@ from datetime import datetime
 import asyncio
 from http import HTTPStatus
 from io import StringIO
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 
-from dateutil.relativedelta import relativedelta
 from fastapi import APIRouter, HTTPException, Security
 from fastapi.security.api_key import APIKeyHeader
 from fastapi.responses import StreamingResponse
@@ -21,8 +20,7 @@ from osiris.core.configuration import Configuration
 from osiris.core.enums import TimeResolution
 from osiris.core.io import get_file_path_with_respect_to_time_resolution
 
-from ..dependencies import Metric, TracerClass
-
+from ..dependencies import Metric, TracerClass, __get_all_dates_to_download
 
 configuration = Configuration(__file__)
 config = configuration.get_config()
@@ -73,19 +71,6 @@ async def download_json_file(guid: str,  # pylint: disable=too-many-locals
     If form_date is left out, current UTC time is used.
     If to_date is left out, only one data point is retrieved.
     """
-    async def download(download_date: datetime, directory_client_local, time_resolution_local: TimeResolution):
-        path = get_file_path_with_respect_to_time_resolution(download_date, time_resolution_local, 'data.json')
-        stream = __download_file(path, directory_client_local)
-
-        try:
-            json_data = json.loads(stream.readall())
-        except ValueError as error:
-            message = f'({type(error).__name__}) File is not JSON formatted: {error}'
-            logger.error(message)
-            raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR, detail=message) from error
-
-        return json_data
-
     logger.debug('download jao data requested')
 
     with __get_filesystem_client(token) as filesystem_client:
@@ -94,12 +79,16 @@ async def download_json_file(guid: str,  # pylint: disable=too-many-locals
         __check_directory_exist(directory_client)
 
         time_resolution_enum = TimeResolution[time_resolution]
-        download_dates = __get_all_dates_to_download(from_date, to_date, time_resolution_enum)
+        if to_date:
+            download_dates = __get_all_dates_to_download(from_date, to_date, time_resolution_enum)
+            download_dates = [item.to_pydatetime() for item in download_dates.tolist()]
+        else:
+            download_dates = [from_date]
 
         concat_response = []
         chunk_size = 200
         for i in range(0, len(download_dates), chunk_size):
-            responses = await asyncio.gather(*[download(download_date, directory_client, time_resolution_enum)
+            responses = await asyncio.gather(*[__download(download_date, directory_client, time_resolution_enum)
                                                for download_date in download_dates[i:i + chunk_size]])
 
             for response in responses:
@@ -107,6 +96,20 @@ async def download_json_file(guid: str,  # pylint: disable=too-many-locals
 
     stream = StringIO(json.dumps(concat_response))
     return StreamingResponse(stream, media_type='application/octet-stream')
+
+
+async def __download(download_date: datetime, directory_client_local, time_resolution_local: TimeResolution):
+    path = get_file_path_with_respect_to_time_resolution(download_date, time_resolution_local, 'data.json')
+    stream = __download_file(path, directory_client_local)
+
+    try:
+        json_data = json.loads(stream.readall())
+    except ValueError as error:
+        message = f'({type(error).__name__}) File is not JSON formatted: {error}'
+        logger.error(message)
+        raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR, detail=message) from error
+
+    return json_data
 
 
 def __check_directory_exist(directory_client: DataLakeDirectoryClient):
@@ -163,30 +166,3 @@ async def __get_settings(directory_client: DataLakeDirectoryClient) -> Dict:
         message = f'({type(error).__name__}) Problems downloading setting.json: {error}'
         logger.error(message)
         raise HTTPException(status_code=error.status_code, detail=message) from error
-
-
-def __get_all_dates_to_download(from_date: datetime, to_date: Optional[datetime],
-                                time_resolution: TimeResolution) -> List:
-    # Get all the dates we need
-    if time_resolution == TimeResolution.YEAR:
-        delta_time = relativedelta(years=+1)
-    elif time_resolution == TimeResolution.MONTH:
-        delta_time = relativedelta(months=+1)
-    elif time_resolution == TimeResolution.DAY:
-        delta_time = relativedelta(days=+1)
-    elif time_resolution == TimeResolution.HOUR:
-        delta_time = relativedelta(hours=+1)
-    elif time_resolution == TimeResolution.MINUTE:
-        delta_time = relativedelta(minutes=+1)
-    else:
-        message = '(ValueError) Unknown time resolution given .'
-        logger.error(message)
-        raise ValueError(message)
-    download_dates = []
-    if to_date is None:
-        download_dates.append(from_date)
-    else:
-        while from_date < to_date:
-            download_dates.append(from_date)
-            from_date += delta_time
-    return download_dates
