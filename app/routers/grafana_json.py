@@ -17,12 +17,12 @@ from osiris.core.azure_client_authorization import ClientAuthorization
 from osiris.core.configuration import Configuration
 from osiris.core.enums import TimeResolution
 from osiris.core.io import get_file_path_with_respect_to_time_resolution
-from pandas import DataFrame, DatetimeIndex
+from pandas import DataFrame
 
 from azure.storage.filedatalake.aio import DataLakeDirectoryClient, DataLakeFileClient
 from azure.core.exceptions import ResourceNotFoundError, HttpResponseError
 
-from ..dependencies import Metric, TracerClass
+from ..dependencies import Metric, TracerClass, __get_all_dates_to_download
 from ..schemas.json_request import QueryRequest, TagValuesRequest
 
 configuration = Configuration(__file__)
@@ -343,29 +343,6 @@ async def __retrieve_data(from_date: datetime, to_date: datetime,
     data.set_index(date_key_field, inplace=True)
 
     return data
-
-
-def __get_all_dates_to_download(from_date: datetime, to_date: datetime,
-                                time_resolution: TimeResolution) -> DatetimeIndex:
-    # Get all the dates we need
-    if time_resolution == TimeResolution.NONE:
-        # We handle this case by making a DatetimeIndex containing one element. We will ignore the
-        # date anyway.
-        return pd.date_range(from_date.strftime("%Y-%m-%d"), from_date.strftime("%Y-%m-%d"), freq='D')
-    if time_resolution == TimeResolution.YEAR:
-        return pd.date_range(from_date.strftime("%Y-%m-%d"), to_date.strftime("%Y-%m-%d"), freq='Y')
-    if time_resolution == TimeResolution.MONTH:
-        return pd.date_range(from_date.strftime("%Y-%m-%d"), to_date.strftime("%Y-%m-%d"), freq='M')
-    if time_resolution == TimeResolution.DAY:
-        return pd.date_range(from_date.strftime("%Y-%m-%d"), to_date.strftime("%Y-%m-%d"), freq='D')
-    if time_resolution == TimeResolution.HOUR:
-        return pd.date_range(from_date.strftime("%Y-%m-%d"), to_date.strftime("%Y-%m-%d"), freq='H')
-    if time_resolution == TimeResolution.MINUTE:
-        return pd.date_range(from_date.strftime("%Y-%m-%d"), to_date.strftime("%Y-%m-%d"), freq='T')
-
-    message = '(ValueError) Unknown time resolution given .'
-    logger.error(message)
-    raise ValueError(message)
 
 
 async def __get_file_client(directory_client: DataLakeDirectoryClient, path):
