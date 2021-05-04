@@ -193,11 +193,11 @@ def __parse_date_str(date_str):
 
         message = '(ValueError) Wrong string format for date(s):'
         logger.error(message)
-        raise HTTPException(status_code=400, detail=message)
+        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=message)
     except ValueError as error:
         message = f'({type(error).__name__}) Wrong string format for date(s): {error}'
         logger.error(message)
-        raise HTTPException(status_code=400, detail=message) from error
+        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=message) from error
 
 
 def __parse_date_arguments(from_date, to_date):
@@ -209,7 +209,7 @@ def __parse_date_arguments(from_date, to_date):
     if len(from_date) != len(to_date):
         message = 'Malformed request syntax: len(from_date) != len(to_date)'
         logger.error(message)
-        raise HTTPException(status_code=400, detail=message)
+        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=message)
 
     from_date_obj, time_resolution = __parse_date_str(from_date)
     to_date_obj, _ = __parse_date_str(to_date)
