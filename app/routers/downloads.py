@@ -9,13 +9,13 @@ from http import HTTPStatus
 from io import StringIO
 from typing import Dict, Optional
 
+import pandas as pd
 from fastapi import APIRouter, HTTPException, Security
 from fastapi.security.api_key import APIKeyHeader
 from fastapi.responses import StreamingResponse
 
 from azure.core.exceptions import ResourceNotFoundError, HttpResponseError
 from azure.storage.filedatalake import DataLakeDirectoryClient, FileSystemClient, StorageStreamDownloader
-from jaeger_client import Span
 from osiris.core.azure_client_authorization import AzureCredential
 from osiris.core.configuration import Configuration
 from osiris.core.enums import TimeResolution
@@ -63,9 +63,8 @@ async def download_file(guid: str,
 @router.get('/{guid}/json', response_class=StreamingResponse)
 @Metric.histogram
 async def download_json_file(guid: str,  # pylint: disable=too-many-locals
-                             from_date: datetime = datetime.utcnow(),
-                             to_date: Optional[datetime] = None,
-                             time_resolution: str = "DAY",
+                             from_date: Optional[str] = None,
+                             to_date: Optional[str] = None,
                              token: str = Security(access_token_header)) -> StreamingResponse:
     """
     Download JSON endpoint with data from from_date to to_date (time period).
@@ -73,6 +72,8 @@ async def download_json_file(guid: str,  # pylint: disable=too-many-locals
     If to_date is left out, only one data point is retrieved.
     """
     logger.debug('download jao data requested')
+
+    from_date_obj, to_date_obj, time_resolution_enum = __parse_date_arguments(from_date, to_date)
 
     with tracer.start_span('download_json_file') as span:
         span.set_tag('guid', guid)
@@ -83,13 +84,12 @@ async def download_json_file(guid: str,  # pylint: disable=too-many-locals
             with tracer.start_active_span('check_directory_exists', child_of=span):
                 __check_directory_exist(directory_client)
 
-            with tracer.start_active_span('retrieve_data', child_of=span) as retrieve_data_span:
-                time_resolution_enum = TimeResolution[time_resolution]
-                if to_date:
-                    download_dates = __get_all_dates_to_download(from_date, to_date, time_resolution_enum)
+            with tracer.start_active_span('retrieve_data', child_of=span):
+                if to_date_obj:
+                    download_dates = __get_all_dates_to_download(from_date_obj, to_date_obj, time_resolution_enum)
                     download_dates = [item.to_pydatetime() for item in download_dates.tolist()]
                 else:
-                    download_dates = [from_date]
+                    download_dates = [from_date_obj]
 
                 concat_response = []
                 chunk_size = 200
@@ -176,3 +176,41 @@ async def __get_settings(directory_client: DataLakeDirectoryClient) -> Dict:
         message = f'({type(error).__name__}) Problems downloading setting.json: {error}'
         logger.error(message)
         raise HTTPException(status_code=error.status_code, detail=message) from error
+
+
+def __parse_date_str(date_str):
+    try:
+        if len(date_str) == 4:
+            return pd.to_datetime(date_str, format='%Y'), TimeResolution.YEAR
+        if len(date_str) == 7:
+            return pd.to_datetime(date_str, format='%Y-%m'), TimeResolution.MONTH
+        if len(date_str) == 10:
+            return pd.to_datetime(date_str, format='%Y-%m-%d'), TimeResolution.DAY
+        if len(date_str) == 13:
+            return pd.to_datetime(date_str, format='%Y-%m-%dT%H'), TimeResolution.HOUR
+        if len(date_str) == 16:
+            return pd.to_datetime(date_str, format='%Y-%m-%dT%H:%M'), TimeResolution.MINUTE
+
+        message = '(ValueError) Wrong string format for date(s):'
+        logger.error(message)
+        raise HTTPException(status_code=400, detail=message)
+    except ValueError as error:
+        message = f'({type(error).__name__}) Wrong string format for date(s): {error}'
+        logger.error(message)
+        raise HTTPException(status_code=400, detail=message) from error
+
+
+def __parse_date_arguments(from_date, to_date):
+    if from_date is None and to_date is None:
+        return datetime(1970, 1, 1), None, TimeResolution.NONE
+    if to_date is None:
+        from_date_obj, time_resolution = __parse_date_str(from_date)
+        return from_date_obj, None, time_resolution
+    if len(from_date) != len(to_date):
+        message = 'Malformed request syntax: len(from_date) != len(to_date)'
+        logger.error(message)
+        raise HTTPException(status_code=400, detail=message)
+
+    from_date_obj, time_resolution = __parse_date_str(from_date)
+    to_date_obj, _ = __parse_date_str(to_date)
+    return from_date_obj, to_date_obj, time_resolution
