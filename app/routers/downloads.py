@@ -16,6 +16,7 @@ from fastapi.responses import StreamingResponse
 
 from azure.core.exceptions import ResourceNotFoundError, HttpResponseError
 from azure.storage.filedatalake import DataLakeDirectoryClient, FileSystemClient, StorageStreamDownloader
+from jaeger_client import Span
 from osiris.core.azure_client_authorization import AzureCredential
 from osiris.core.configuration import Configuration
 from osiris.core.enums import TimeResolution
@@ -78,13 +79,13 @@ async def download_json_file(guid: str,  # pylint: disable=too-many-locals
     with tracer.start_span('download_json_file') as span:
         span.set_tag('guid', guid)
         with __get_filesystem_client(token) as filesystem_client:
-            with tracer.start_active_span('get_directory_client', child_of=span):
+            with tracer.start_span('get_directory_client', child_of=span):
                 directory_client = filesystem_client.get_directory_client(guid)
 
-            with tracer.start_active_span('check_directory_exists', child_of=span):
+            with tracer.start_span('check_directory_exists', child_of=span):
                 __check_directory_exist(directory_client)
 
-            with tracer.start_active_span('retrieve_data', child_of=span):
+            with tracer.start_span('retrieve_data', child_of=span) as retrieve_data_span:
                 if to_date_obj:
                     download_dates = __get_all_dates_to_download(from_date_obj, to_date_obj, time_resolution_enum)
                     download_dates = [item.to_pydatetime() for item in download_dates.tolist()]
@@ -96,7 +97,8 @@ async def download_json_file(guid: str,  # pylint: disable=too-many-locals
                 for i in range(0, len(download_dates), chunk_size):
                     responses = await asyncio.gather(*[__download(download_date,
                                                                   directory_client,
-                                                                  time_resolution_enum)
+                                                                  time_resolution_enum,
+                                                                  retrieve_data_span)
                                                        for download_date in download_dates[i:i + chunk_size]])
 
                     for response in responses:
@@ -108,18 +110,21 @@ async def download_json_file(guid: str,  # pylint: disable=too-many-locals
 
 async def __download(download_date: datetime,
                      directory_client_local,
-                     time_resolution_local: TimeResolution):
-    path = get_file_path_with_respect_to_time_resolution(download_date, time_resolution_local, 'data.json')
-    stream = __download_file(path, directory_client_local)
+                     time_resolution_local: TimeResolution,
+                     retrieve_data_span: Span):
+    with tracer.start_span('retrieve_data_download', child_of=retrieve_data_span) as local_span:
+        path = get_file_path_with_respect_to_time_resolution(download_date, time_resolution_local, 'data.json')
+        local_span.set_tag('path', path)
+        stream = __download_file(path, directory_client_local)
 
-    try:
-        json_data = json.loads(stream.readall())
-    except ValueError as error:
-        message = f'({type(error).__name__}) File is not JSON formatted: {error}'
-        logger.error(message)
-        raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR, detail=message) from error
+        try:
+            json_data = json.loads(stream.readall())
+        except ValueError as error:
+            message = f'({type(error).__name__}) File is not JSON formatted: {error}'
+            logger.error(message)
+            raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR, detail=message) from error
 
-    return json_data
+        return json_data
 
 
 def __check_directory_exist(directory_client: DataLakeDirectoryClient):
