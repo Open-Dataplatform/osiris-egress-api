@@ -1,42 +1,38 @@
 """
 Contains dependencies used in several places of the application.
 """
-import configparser
-from configparser import ConfigParser
-import logging.config
 import time
-from logging import Logger
+from datetime import datetime
 from functools import wraps
 
 from jaeger_client import Config
 from jaeger_client.metrics.prometheus import PrometheusMetricsFactory
+from osiris.core.configuration import Configuration
+from osiris.core.enums import TimeResolution
+import pandas as pd
+from pandas import DatetimeIndex
 from prometheus_client import Histogram, Counter
 
 
-class Configuration:
-    """
-    Contains methods to obtain configurations for this application.
-    """
+def __get_all_dates_to_download(from_date: datetime, to_date: datetime,
+                                time_resolution: TimeResolution) -> DatetimeIndex:
+    # Get all the dates we need
+    if time_resolution == TimeResolution.NONE:
+        # We handle this case by making a DatetimeIndex containing one element. We will ignore the
+        # date anyway.
+        return pd.date_range(from_date.strftime("%Y-%m-%d"), from_date.strftime("%Y-%m-%d"), freq='D')
+    if time_resolution == TimeResolution.YEAR:
+        return pd.date_range(from_date.strftime("%Y-%m-%d"), to_date.strftime("%Y-%m-%d"), freq='Y')
+    if time_resolution == TimeResolution.MONTH:
+        return pd.date_range(from_date.strftime("%Y-%m-%d"), to_date.strftime("%Y-%m-%d"), freq='M')
+    if time_resolution == TimeResolution.DAY:
+        return pd.date_range(from_date.strftime("%Y-%m-%d"), to_date.strftime("%Y-%m-%d"), freq='D')
+    if time_resolution == TimeResolution.HOUR:
+        return pd.date_range(from_date.strftime("%Y-%m-%d"), to_date.strftime("%Y-%m-%d"), freq='H')
+    if time_resolution == TimeResolution.MINUTE:
+        return pd.date_range(from_date.strftime("%Y-%m-%d"), to_date.strftime("%Y-%m-%d"), freq='T')
 
-    def __init__(self, name: str):
-        self.config = configparser.ConfigParser()
-        self.config.read(['conf.ini', '/etc/osiris/conf.ini', '/etc/osiris-egress/conf.ini'])
-
-        logging.config.fileConfig(fname=self.config['Logging']['configuration_file'], disable_existing_loggers=False)
-
-        self.name = name
-
-    def get_config(self) -> ConfigParser:
-        """
-        The configuration for the application.
-        """
-        return self.config
-
-    def get_logger(self) -> Logger:
-        """
-        A customized logger.
-        """
-        return logging.getLogger(self.name)
+    raise ValueError('(ValueError) Unknown time resolution given.')
 
 
 class Metric:

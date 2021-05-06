@@ -27,7 +27,7 @@ class AdhocFilter(BaseModel):
 
 class QueryRequest(BaseModel):
     """
-    Request object for query endpont
+    Request object for query endpoint
     """
     maxDataPoints: int
     adhocFilters: List[AdhocFilter]

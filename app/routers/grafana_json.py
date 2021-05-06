@@ -14,12 +14,15 @@ from fastapi import APIRouter, HTTPException, Header
 from fastapi.security.api_key import APIKeyHeader
 from jaeger_client import Span
 from osiris.core.azure_client_authorization import ClientAuthorization
+from osiris.core.configuration import Configuration
+from osiris.core.enums import TimeResolution
+from osiris.core.io import get_file_path_with_respect_to_time_resolution
 from pandas import DataFrame
 
 from azure.storage.filedatalake.aio import DataLakeDirectoryClient, DataLakeFileClient
 from azure.core.exceptions import ResourceNotFoundError, HttpResponseError
 
-from ..dependencies import Configuration, Metric, TracerClass
+from ..dependencies import Metric, TracerClass, __get_all_dates_to_download
 from ..schemas.json_request import QueryRequest, TagValuesRequest
 
 configuration = Configuration(__file__)
@@ -92,15 +95,18 @@ async def query(guid: str, request: QueryRequest,
 
         with tracer.start_span('get_directory_client', child_of=span):
             directory_client = await __get_directory_client(guid, client_id, client_secret)
+        with tracer.start_active_span('get_grafana_settings', child_of=span):
+            grafana_settings = await __get_grafana_settings(directory_client)
         from_date = pd.Timestamp(request.range['from']).to_pydatetime()
         to_date = pd.Timestamp(request.range['to']).to_pydatetime()
         span.set_tag('request_from_date', str(from_date))
         span.set_tag('request_to_date', str(to_date))
 
         with tracer.start_span('retrieve_data', child_of=span) as retrieve_data_span:
-            data_df = await __retrieve_data(from_date, to_date, directory_client, retrieve_data_span)
+            data_df = await __retrieve_data(from_date, to_date, grafana_settings,
+                                            directory_client, retrieve_data_span)
         with tracer.start_span('filter_with_adhoc_filters', child_of=span):
-            data_df = await __filter_with_adhoc_filters(directory_client, data_df, request.adhocFilters)
+            data_df = await __filter_with_adhoc_filters(data_df, request.adhocFilters, grafana_settings)
 
         freq = f'{request.intervalMs}ms'
 
@@ -270,37 +276,40 @@ def __arrange_time_range_in_dict(from_date: datetime, to_date: datetime) -> Dict
     return time_range_dict
 
 
+async def __download(timeslot: datetime, time_resolution: TimeResolution, directory_client: DataLakeDirectoryClient,
+                     retrieve_data_span_local: Span) -> Optional[DataFrame]:
+    with tracer.start_span('retrieve_data_download', child_of=retrieve_data_span_local) as local_span:
+        path = get_file_path_with_respect_to_time_resolution(timeslot, time_resolution, 'data.json')
+        local_span.set_tag('path', path)
+
+        file_client: DataLakeFileClient = await __get_file_client(directory_client, path)
+        if not file_client:
+            return None
+
+        try:
+            downloaded_file = await file_client.download_file()
+            data = await downloaded_file.readall()
+        except HttpResponseError as error:
+            message = f'({type(error).__name__}) Problems downloading data file: {error}'
+            logger.error(message)
+            raise HTTPException(status_code=error.status_code, detail=message) from error
+
+        try:
+            file_json = pd.read_json(data)
+        except ValueError as error:
+            message = f'({type(error).__name__}) File is not JSON formatted: {error}'
+            logger.error(message)
+            raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR, detail=message) from error
+
+        return file_json
+
+
 async def __download_files(timeslot_chunk: List[datetime],
+                           time_resolution: TimeResolution,
                            directory_client: DataLakeDirectoryClient,
                            retrieve_data_span: Span) -> List:
-
-    async def download(timeslot: datetime, retrieve_data_span_local: Span) -> Optional[str]:
-        with tracer.start_span('retrieve_data_download', child_of=retrieve_data_span_local) as local_span:
-            path = f'year={timeslot.year}/month={timeslot.month:02d}/day={timeslot.day:02d}/data.json'
-            local_span.set_tag('path', path)
-
-            file_client: DataLakeFileClient = await __get_file_client(directory_client, path)
-            if not file_client:
-                return None
-
-            try:
-                downloaded_file = await file_client.download_file()
-                data = await downloaded_file.readall()
-            except HttpResponseError as error:
-                message = f'({type(error).__name__}) Problems downloading data file: {error}'
-                logger.error(message)
-                raise HTTPException(status_code=error.status_code, detail=message) from error
-
-            try:
-                file_json = pd.read_json(data)
-            except ValueError as error:
-                message = f'({type(error).__name__}) File is not JSON formatted: {error}'
-                logger.error(message)
-                raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR, detail=message) from error
-
-            return file_json
-
-    return await asyncio.gather(*[download(timeslot, retrieve_data_span) for timeslot in timeslot_chunk])
+    return await asyncio.gather(*[__download(timeslot, time_resolution, directory_client, retrieve_data_span)
+                                  for timeslot in timeslot_chunk])
 
 
 def __split_into_chunks(lst, chunk_size):
@@ -309,15 +318,18 @@ def __split_into_chunks(lst, chunk_size):
 
 
 async def __retrieve_data(from_date: datetime, to_date: datetime,
+                          grafana_settings: Dict,
                           directory_client: DataLakeDirectoryClient,
                           retrieve_data_span: Span) -> Optional[DataFrame]:
 
-    time_range = pd.date_range(from_date.strftime("%Y-%m-%d"), to_date.strftime("%Y-%m-%d"), freq='D')
+    time_resolution = TimeResolution[grafana_settings['time_resolution']]
+    date_key_field = grafana_settings['date_key_field']
+    time_range = __get_all_dates_to_download(from_date, to_date, time_resolution)
 
     data = None
     # We need to divide the timeslots into chunks so we don't hit the limit of asyncio.gather.
     for chunk in __split_into_chunks(time_range, 200):
-        df_list = await __download_files(chunk, directory_client, retrieve_data_span)
+        df_list = await __download_files(chunk, time_resolution, directory_client, retrieve_data_span)
 
         if all(elem is None for elem in df_list):
             continue
@@ -328,7 +340,10 @@ async def __retrieve_data(from_date: datetime, to_date: datetime,
     if data is None:
         return None
 
-    data.set_index('datetime', inplace=True)
+    # Pandas need help recognizing date column if column name doesn't contain date
+    data[date_key_field] = pd.to_datetime(data[date_key_field])
+
+    data.set_index(date_key_field, inplace=True)
 
     return data
 
@@ -356,9 +371,7 @@ async def __get_grafana_settings(directory_client: DataLakeDirectoryClient) -> D
         raise HTTPException(status_code=error.status_code, detail=message) from error
 
 
-async def __filter_with_adhoc_filters(directory_client: DataLakeDirectoryClient,
-                                      data_df: DataFrame, adhoc_filters: List):
-    grafana_settings = await __get_grafana_settings(directory_client)
+async def __filter_with_adhoc_filters(data_df: DataFrame, adhoc_filters: List, grafana_settings: Dict):
 
     for adhoc_filter in adhoc_filters:
         key_type = __find_key_type(grafana_settings['tag_keys'], adhoc_filter.key)
