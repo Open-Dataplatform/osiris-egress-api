@@ -26,6 +26,8 @@ spec:
     metadata:
       labels:
         app: {{ .Values.appName }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
     spec:
       containers:
       - image: {{ .Values.deployment.image.repository }}:{{ .Values.deployment.image.tag }}
