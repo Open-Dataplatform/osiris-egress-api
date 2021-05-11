@@ -7,22 +7,22 @@ from datetime import datetime
 import asyncio
 from http import HTTPStatus
 from io import StringIO
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 
 import pandas as pd
+from azure.storage.filedatalake.aio import DataLakeDirectoryClient, StorageStreamDownloader, FileSystemClient
 from fastapi import APIRouter, HTTPException, Security
 from fastapi.security.api_key import APIKeyHeader
 from fastapi.responses import StreamingResponse
 
 from azure.core.exceptions import ResourceNotFoundError, HttpResponseError
-from azure.storage.filedatalake import DataLakeDirectoryClient, FileSystemClient, StorageStreamDownloader
 from jaeger_client import Span
-from osiris.core.azure_client_authorization import AzureCredential
+from osiris.core.azure_client_authorization import AzureCredentialAIO
 from osiris.core.configuration import Configuration
 from osiris.core.enums import TimeResolution
-from osiris.core.io import get_file_path_with_respect_to_time_resolution
 
-from ..dependencies import Metric, TracerClass, __get_all_dates_to_download
+from ..dependencies import __get_all_dates_to_download, __download_data, __split_into_chunks
+from ..metrics import TracerClass, Metric
 
 configuration = Configuration(__file__)
 config = configuration.get_config()
@@ -49,7 +49,7 @@ async def download_file(guid: str,
 
     with tracer.start_span('download_file') as span:
         span.set_tag('guid', guid)
-        with __get_filesystem_client(token) as filesystem_client:
+        async with await __get_filesystem_client(token) as filesystem_client:
             with tracer.start_active_span('get_directory_client', child_of=span):
                 directory_client = filesystem_client.get_directory_client(guid)
             with tracer.start_active_span('check_directory_exists', child_of=span):
@@ -78,7 +78,7 @@ async def download_json_file(guid: str,  # pylint: disable=too-many-locals
 
     with tracer.start_span('download_json_file') as span:
         span.set_tag('guid', guid)
-        with __get_filesystem_client(token) as filesystem_client:
+        async with await __get_filesystem_client(token) as filesystem_client:
             with tracer.start_span('get_directory_client', child_of=span):
                 directory_client = filesystem_client.get_directory_client(guid)
 
@@ -93,38 +93,38 @@ async def download_json_file(guid: str,  # pylint: disable=too-many-locals
                     download_dates = [from_date_obj]
 
                 concat_response = []
-                chunk_size = 200
-                for i in range(0, len(download_dates), chunk_size):
-                    responses = await asyncio.gather(*[__download(download_date,
-                                                                  directory_client,
-                                                                  time_resolution_enum,
-                                                                  retrieve_data_span)
-                                                       for download_date in download_dates[i:i + chunk_size]])
+                for chunk in __split_into_chunks(download_dates, 200):
+                    responses = await __download_files(chunk, time_resolution_enum,
+                                                       directory_client, retrieve_data_span)
 
                     for response in responses:
-                        concat_response += response
+                        if response:
+                            concat_response += response
 
         stream = StringIO(json.dumps(concat_response))
         return StreamingResponse(stream, media_type='application/octet-stream')
 
 
-async def __download(download_date: datetime,
-                     directory_client_local,
-                     time_resolution_local: TimeResolution,
-                     retrieve_data_span: Span):
-    with tracer.start_span('retrieve_data_download', child_of=retrieve_data_span) as local_span:
-        path = get_file_path_with_respect_to_time_resolution(download_date, time_resolution_local, 'data.json')
-        local_span.set_tag('path', path)
-        stream = __download_file(path, directory_client_local)
+async def __download_files(timeslot_chunk: List[datetime],
+                           time_resolution: TimeResolution,
+                           directory_client: DataLakeDirectoryClient,
+                           retrieve_data_span: Span) -> List:
+    async def __download(download_date: datetime):
+        data = await __download_data(download_date, time_resolution, directory_client, retrieve_data_span)
+
+        if not data:
+            return None
 
         try:
-            json_data = json.loads(stream.readall())
+            json_data = json.loads(data)
         except ValueError as error:
             message = f'({type(error).__name__}) File is not JSON formatted: {error}'
             logger.error(message)
             raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR, detail=message) from error
 
         return json_data
+
+    return await asyncio.gather(*[__download(timeslot) for timeslot in timeslot_chunk])
 
 
 def __check_directory_exist(directory_client: DataLakeDirectoryClient):
@@ -163,10 +163,10 @@ def __download_file(filename: str, directory_client: DataLakeDirectoryClient) ->
         raise HTTPException(status_code=error.status_code, detail=message) from error
 
 
-def __get_filesystem_client(token: str) -> FileSystemClient:
+async def __get_filesystem_client(token: str) -> FileSystemClient:
     account_url = config['Azure Storage']['account_url']
     filesystem_name = config['Azure Storage']['filesystem_name']
-    credential = AzureCredential(token)
+    credential = AzureCredentialAIO(token)
 
     return FileSystemClient(account_url, filesystem_name, credential=credential)
 

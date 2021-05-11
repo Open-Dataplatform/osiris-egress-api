@@ -1,17 +1,30 @@
 """
 Contains dependencies used in several places of the application.
 """
-import time
 from datetime import datetime
-from functools import wraps
+from typing import Optional, Union
 
-from jaeger_client import Config
-from jaeger_client.metrics.prometheus import PrometheusMetricsFactory
-from osiris.core.configuration import Configuration
-from osiris.core.enums import TimeResolution
 import pandas as pd
+from azure.core.exceptions import HttpResponseError, ResourceNotFoundError
+from fastapi import HTTPException
+from osiris.core.configuration import Configuration
+from osiris.core.io import get_file_path_with_respect_to_time_resolution
 from pandas import DatetimeIndex
-from prometheus_client import Histogram, Counter
+
+from jaeger_client import Span
+
+from osiris.core.enums import TimeResolution
+
+from azure.storage.filedatalake.aio import DataLakeDirectoryClient, DataLakeFileClient, StorageStreamDownloader
+
+from app.metrics import TracerClass
+
+
+configuration = Configuration(__file__)
+config = configuration.get_config()
+logger = configuration.get_logger()
+
+tracer = TracerClass().get_tracer()
 
 
 def __get_all_dates_to_download(from_date: datetime, to_date: datetime,
@@ -35,98 +48,51 @@ def __get_all_dates_to_download(from_date: datetime, to_date: datetime,
     raise ValueError('(ValueError) Unknown time resolution given.')
 
 
-class Metric:
-    """
-    Class to wrap all metrics for prometheus.
-    """
-    HISTOGRAM = Histogram('osiris_egress_api', 'Osiris Egress API (method, guid, time)', ['method', 'guid'])
-    COUNTER = Counter('osiris_egress_api_method_counter',
-                      'Osiris Egress API counter (method, guid)',
-                      ['method', 'guid'])
+async def __download_data(timeslot: datetime,
+                          time_resolution: TimeResolution,
+                          directory_client: DataLakeDirectoryClient,
+                          retrieve_data_span_local: Span) -> Optional[Union[bytes, str]]:
+    with tracer.start_span('retrieve_data_download', child_of=retrieve_data_span_local) as local_span:
+        path = get_file_path_with_respect_to_time_resolution(timeslot, time_resolution, 'data.json')
+        local_span.set_tag('path', path)
 
-    @staticmethod
-    def histogram(func):
-        """
-        Decorator method for metrics of type histogram
-        """
+        file_client: DataLakeFileClient = await __get_file_client(directory_client, path)
+        if not file_client:
+            return None
 
-        @wraps(func)
-        async def wrapper(*args, **kwargs):
-            start_time = time.time()
+        try:
+            downloaded_file = await file_client.download_file()
+            data = await downloaded_file.readall()
+        except HttpResponseError as error:
+            message = f'({type(error).__name__}) Problems downloading data file: {error}'
+            logger.error(message)
+            raise HTTPException(status_code=error.status_code, detail=message) from error
 
-            result = await func(*args, **kwargs)
-
-            time_taken = time.time() - start_time
-            Metric.HISTOGRAM.labels(func.__name__, kwargs['guid']).observe(time_taken)
-            return result
-
-        return wrapper
-
-    @staticmethod
-    def counter(func):
-        """
-        Decorator method for metrics of type counter
-        """
-        @wraps(func)
-        async def wrapper(*args, **kwargs):
-            result = await func(*args, **kwargs)
-            Metric.COUNTER.labels(func.__name__, kwargs['guid']).inc()
-            return result
-
-        return wrapper
+        return data
 
 
-def singleton(cls, *args, **kw):
-    """
-    Function needed to create a singleton of a class
-    """
-    instances = {}
-
-    def _singleton():
-        if cls not in instances:
-            instances[cls] = cls(*args, **kw)
-        return instances[cls]
-
-    return _singleton
+def __split_into_chunks(lst, chunk_size):
+    for i in range(0, len(lst), chunk_size):
+        yield lst[i:i + chunk_size]
 
 
-@singleton
-class TracerClass:  # pylint: disable=too-few-public-methods
-    """
-    Used to get a tracer for Osiris-Egress-API.
-    Note: There can only be one tracers, hence we need to make a singleton class
-    """
-    def __init__(self, service='osiris_egress_api'):
-        configuration = Configuration(__file__)
-        config = configuration.get_config()
+async def __get_file_client(directory_client: DataLakeDirectoryClient, path):
+    file_client: DataLakeFileClient = directory_client.get_file_client(path)
+    try:
+        await file_client.get_file_properties()
+    except ResourceNotFoundError:
+        # We return None to indicate that the file doesnt exist.
+        return None
 
-        reporting_host = config['Jaeger Agent']['reporting_host']
-        reporting_port = config['Jaeger Agent']['reporting_port']
+    return file_client
 
-        local_agent = {}  # Default empty - if run on localhost
-        if reporting_host != 'localhost':
-            local_agent['reporting_host'] = reporting_host
-            local_agent['reporting_port'] = reporting_port
 
-        tracer_config = Config(
-            config={
-                'sampler': {
-                    'type': 'const',
-                    'param': 1,
-                },
-                'local_agent': local_agent,
-                'logging': True,
-            },
-            service_name=service,
-            validate=True,
-            # Adds some metrics to Prometheus
-            metrics_factory=PrometheusMetricsFactory(service_name_label='osiris_egress_api')
-        )
-
-        self.tracer = tracer_config.initialize_tracer()
-
-    def get_tracer(self):
-        """
-        Returns the tracer
-        """
-        return self.tracer
+async def __download_file(filename: str, directory_client: DataLakeDirectoryClient) -> StorageStreamDownloader:
+    file_client = directory_client.get_file_client(filename)
+    try:
+        downloaded_file = await file_client.download_file()
+        return downloaded_file
+    except HttpResponseError as error:
+        message = f'({type(error).__name__}) File could not be downloaded: {error}'
+        logger.error(message)
+        raise HTTPException(status_code=error.status_code, detail=message) from error

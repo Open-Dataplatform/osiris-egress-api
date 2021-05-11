@@ -1,11 +1,11 @@
 """
 Implements endpoints which are required by the Json plugin for Grafana.
 """
+import asyncio
 from datetime import datetime
 from http import HTTPStatus
 from typing import Dict, List, Optional
 import json
-import asyncio
 
 import pandas as pd
 import numpy as np
@@ -16,13 +16,13 @@ from jaeger_client import Span
 from osiris.core.azure_client_authorization import ClientAuthorization
 from osiris.core.configuration import Configuration
 from osiris.core.enums import TimeResolution
-from osiris.core.io import get_file_path_with_respect_to_time_resolution
 from pandas import DataFrame
 
-from azure.storage.filedatalake.aio import DataLakeDirectoryClient, DataLakeFileClient
-from azure.core.exceptions import ResourceNotFoundError, HttpResponseError
+from azure.storage.filedatalake.aio import DataLakeDirectoryClient
+from azure.core.exceptions import ResourceNotFoundError
 
-from ..dependencies import Metric, TracerClass, __get_all_dates_to_download
+from ..dependencies import __get_all_dates_to_download, __split_into_chunks, __download_data
+from ..metrics import TracerClass, Metric
 from ..schemas.json_request import QueryRequest, TagValuesRequest
 
 configuration = Configuration(__file__)
@@ -276,45 +276,27 @@ def __arrange_time_range_in_dict(from_date: datetime, to_date: datetime) -> Dict
     return time_range_dict
 
 
-async def __download(timeslot: datetime, time_resolution: TimeResolution, directory_client: DataLakeDirectoryClient,
-                     retrieve_data_span_local: Span) -> Optional[DataFrame]:
-    with tracer.start_span('retrieve_data_download', child_of=retrieve_data_span_local) as local_span:
-        path = get_file_path_with_respect_to_time_resolution(timeslot, time_resolution, 'data.json')
-        local_span.set_tag('path', path)
-
-        file_client: DataLakeFileClient = await __get_file_client(directory_client, path)
-        if not file_client:
-            return None
-
-        try:
-            downloaded_file = await file_client.download_file()
-            data = await downloaded_file.readall()
-        except HttpResponseError as error:
-            message = f'({type(error).__name__}) Problems downloading data file: {error}'
-            logger.error(message)
-            raise HTTPException(status_code=error.status_code, detail=message) from error
-
-        try:
-            file_json = pd.read_json(data)
-        except ValueError as error:
-            message = f'({type(error).__name__}) File is not JSON formatted: {error}'
-            logger.error(message)
-            raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR, detail=message) from error
-
-        return file_json
-
-
 async def __download_files(timeslot_chunk: List[datetime],
                            time_resolution: TimeResolution,
                            directory_client: DataLakeDirectoryClient,
                            retrieve_data_span: Span) -> List:
-    return await asyncio.gather(*[__download(timeslot, time_resolution, directory_client, retrieve_data_span)
-                                  for timeslot in timeslot_chunk])
+    async def __download(timeslot: datetime) -> Optional[DataFrame]:
+        data = await __download_data(timeslot, time_resolution, directory_client, retrieve_data_span)
 
+        if not data:
+            return None
 
-def __split_into_chunks(lst, chunk_size):
-    for i in range(0, len(lst), chunk_size):
-        yield lst[i:i + chunk_size]
+        with tracer.start_span('retrieve_data_download', child_of=retrieve_data_span):
+            try:
+                file_json = pd.read_json(data)
+            except ValueError as error:
+                message = f'({type(error).__name__}) File is not JSON formatted: {error}'
+                logger.error(message)
+                raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR, detail=message) from error
+
+            return file_json
+
+    return await asyncio.gather(*[__download(timeslot) for timeslot in timeslot_chunk])
 
 
 async def __retrieve_data(from_date: datetime, to_date: datetime,
@@ -346,17 +328,6 @@ async def __retrieve_data(from_date: datetime, to_date: datetime,
     data.set_index(date_key_field, inplace=True)
 
     return data
-
-
-async def __get_file_client(directory_client: DataLakeDirectoryClient, path):
-    file_client: DataLakeFileClient = directory_client.get_file_client(path)
-    try:
-        await file_client.get_file_properties()
-    except ResourceNotFoundError:
-        # We return None to indicate that the file doesnt exist.
-        return None
-
-    return file_client
 
 
 async def __get_grafana_settings(directory_client: DataLakeDirectoryClient) -> Dict:
