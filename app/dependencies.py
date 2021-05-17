@@ -3,19 +3,18 @@ Contains dependencies used in several places of the application.
 """
 from datetime import datetime
 from typing import Optional, Union
-
 import pandas as pd
-from azure.core.exceptions import HttpResponseError, ResourceNotFoundError
-from fastapi import HTTPException
-from osiris.core.configuration import Configuration
-from osiris.core.io import get_file_path_with_respect_to_time_resolution
-from pandas import DatetimeIndex
 
+from pandas import DatetimeIndex
+from fastapi import HTTPException
 from jaeger_client import Span
 
-from osiris.core.enums import TimeResolution
-
+from azure.core.exceptions import HttpResponseError, ResourceNotFoundError
 from azure.storage.filedatalake.aio import DataLakeDirectoryClient, DataLakeFileClient, StorageStreamDownloader
+
+from osiris.core.configuration import Configuration
+from osiris.core.io import get_file_path_with_respect_to_time_resolution
+from osiris.core.enums import TimeResolution
 
 from app.metrics import TracerClass
 
@@ -51,8 +50,8 @@ def __get_all_dates_to_download(from_date: datetime, to_date: datetime,
 async def __download_data(timeslot: datetime,
                           time_resolution: TimeResolution,
                           directory_client: DataLakeDirectoryClient,
-                          retrieve_data_span_local: Span) -> Optional[Union[bytes, str]]:
-    with tracer.start_span('retrieve_data_download', child_of=retrieve_data_span_local) as local_span:
+                          retrieve_data_span: Span) -> Optional[Union[bytes, str]]:
+    with tracer.start_span('retrieve_data_download', child_of=retrieve_data_span) as local_span:
         path = get_file_path_with_respect_to_time_resolution(timeslot, time_resolution, 'data.json')
         local_span.set_tag('path', path)
 

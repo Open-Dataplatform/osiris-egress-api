@@ -8,15 +8,15 @@ import asyncio
 from http import HTTPStatus
 from io import StringIO
 from typing import Dict, Optional, List
-
 import pandas as pd
-from azure.storage.filedatalake.aio import DataLakeDirectoryClient, StorageStreamDownloader, FileSystemClient
+
+from azure.storage.filedatalake.aio import DataLakeDirectoryClient, FileSystemClient
+from azure.core.exceptions import ResourceNotFoundError
 from fastapi import APIRouter, HTTPException, Security
 from fastapi.security.api_key import APIKeyHeader
 from fastapi.responses import StreamingResponse
-
-from azure.core.exceptions import ResourceNotFoundError, HttpResponseError
 from jaeger_client import Span
+
 from osiris.core.azure_client_authorization import AzureCredentialAIO
 from osiris.core.configuration import Configuration
 from osiris.core.enums import TimeResolution
@@ -35,35 +35,35 @@ router = APIRouter(tags=['downloads'])
 tracer = TracerClass().get_tracer()
 
 
-@router.get('/{guid}', response_class=StreamingResponse)
-@Metric.histogram
-async def download_file(guid: str,
-                        file_date: datetime = datetime.utcnow(),
-                        token: str = Security(access_token_header)) -> StreamingResponse:
-    """
-    Download file from data storage from the given date (UTC). This endpoint expects data to be
-    stored in the folder {guid}/year={date.year:02d}/month={date.month:02d}/day={date.day:02d}/, but doesnt make
-    any assumption about the filename and file extension.
-    """
-    logger.debug('download file requested')
-
-    with tracer.start_span('download_file') as span:
-        span.set_tag('guid', guid)
-        async with await __get_filesystem_client(token) as filesystem_client:
-            with tracer.start_active_span('get_directory_client', child_of=span):
-                directory_client = filesystem_client.get_directory_client(guid)
-            with tracer.start_active_span('check_directory_exists', child_of=span):
-                __check_directory_exist(directory_client)
-            with tracer.start_active_span('download_file', child_of=span):
-                path = __get_path_for_arbitrary_file(file_date, guid, filesystem_client)
-                stream = __download_file(path, directory_client)
-
-            return StreamingResponse(stream.chunks(), media_type='application/octet-stream')
+# @router.get('/{guid}', response_class=StreamingResponse)
+# @Metric.histogram
+# async def download_file(guid: str,
+#                         file_date: datetime = datetime.utcnow(),
+#                         token: str = Security(access_token_header)) -> StreamingResponse:
+#     """
+#     Download file from data storage from the given date (UTC). This endpoint expects data to be
+#     stored in the folder {guid}/year={date.year:02d}/month={date.month:02d}/day={date.day:02d}/, but doesnt make
+#     any assumption about the filename and file extension.
+#     """
+#     logger.debug('download file requested')
+#
+#     with tracer.start_span('download_file') as span:
+#         span.set_tag('guid', guid)
+#         async with await __get_filesystem_client(token) as filesystem_client:
+#             with tracer.start_active_span('get_directory_client', child_of=span):
+#                 directory_client = filesystem_client.get_directory_client(guid)
+#             with tracer.start_active_span('check_directory_exists', child_of=span):
+#                 __check_directory_exist(directory_client)
+#             with tracer.start_active_span('download_file', child_of=span):
+#                 path = __get_path_for_arbitrary_file(file_date, guid, filesystem_client)
+#                 stream = __download_file(path, directory_client)
+#
+#             return StreamingResponse(stream.chunks(), media_type='application/octet-stream')
 
 
 @router.get('/{guid}/json', response_class=StreamingResponse)
 @Metric.histogram
-async def download_json_file(guid: str,  # pylint: disable=too-many-locals
+async def download_json_file(guid: str,   # pylint: disable=too-many-locals
                              from_date: Optional[str] = None,
                              to_date: Optional[str] = None,
                              token: str = Security(access_token_header)) -> StreamingResponse:
@@ -101,8 +101,12 @@ async def download_json_file(guid: str,  # pylint: disable=too-many-locals
                         if response:
                             concat_response += response
 
+        status_code = 200
+        if not concat_response:
+            status_code = HTTPStatus.NO_CONTENT
+
         stream = StringIO(json.dumps(concat_response))
-        return StreamingResponse(stream, media_type='application/octet-stream')
+        return StreamingResponse(stream, media_type='application/octet-stream', status_code=status_code)
 
 
 async def __download_files(timeslot_chunk: List[datetime],
@@ -152,15 +156,15 @@ def __get_path_for_arbitrary_file(file_date: datetime, guid: str, filesystem_cli
     return filename
 
 
-def __download_file(filename: str, directory_client: DataLakeDirectoryClient) -> StorageStreamDownloader:
-    file_client = directory_client.get_file_client(filename)
-    try:
-        downloaded_file = file_client.download_file()
-        return downloaded_file
-    except HttpResponseError as error:
-        message = f'({type(error).__name__}) File could not be downloaded: {error}'
-        logger.error(message)
-        raise HTTPException(status_code=error.status_code, detail=message) from error
+# def __download_file(filename: str, directory_client: DataLakeDirectoryClient) -> StorageStreamDownloader:
+#     file_client = directory_client.get_file_client(filename)
+#     try:
+#         downloaded_file = file_client.download_file()
+#         return downloaded_file  # pylint: disable=duplicate-code
+#     except HttpResponseError as error:
+#         message = f'({type(error).__name__}) File could not be downloaded: {error}'
+#         logger.error(message)
+#         raise HTTPException(status_code=error.status_code, detail=message) from error
 
 
 async def __get_filesystem_client(token: str) -> FileSystemClient:

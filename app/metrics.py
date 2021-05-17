@@ -1,3 +1,6 @@
+"""
+Module to wrap all metrics for prometheus.
+"""
 import time
 from functools import wraps
 
