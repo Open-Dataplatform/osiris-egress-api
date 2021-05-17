@@ -3,6 +3,9 @@ Module to wrap all metrics for prometheus.
 """
 import time
 from functools import wraps
+from http import HTTPStatus
+
+from fastapi import HTTPException, Response
 
 from jaeger_client import Config
 from jaeger_client.metrics.prometheus import PrometheusMetricsFactory
@@ -16,7 +19,8 @@ class Metric:
     """
     Class to wrap all metrics for prometheus.
     """
-    HISTOGRAM = Histogram('osiris_egress_api', 'Osiris Egress API (method, guid, time)', ['method', 'guid'])
+    HISTOGRAM = Histogram('osiris_egress_api', 'Osiris Egress API (method, guid, time)', ['method', 'guid',
+                                                                                          'status_code'])
     COUNTER = Counter('osiris_egress_api_method_counter',
                       'Osiris Egress API counter (method, guid)',
                       ['method', 'guid'])
@@ -31,10 +35,15 @@ class Metric:
         async def wrapper(*args, **kwargs):
             start_time = time.time()
 
-            result = await func(*args, **kwargs)
+            try:
+                result: Response = await func(*args, **kwargs)
+            except HTTPException as error:
+                time_taken = time.time() - start_time
+                Metric.HISTOGRAM.labels(func.__name__, kwargs['guid'], str(error.status_code)).observe(time_taken)
+                raise error
 
             time_taken = time.time() - start_time
-            Metric.HISTOGRAM.labels(func.__name__, kwargs['guid']).observe(time_taken)
+            Metric.HISTOGRAM.labels(func.__name__, kwargs['guid'], result.status_code).observe(time_taken)
             return result
 
         return wrapper

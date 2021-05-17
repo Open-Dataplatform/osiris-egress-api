@@ -20,6 +20,7 @@ from pandas import DataFrame
 
 from azure.storage.filedatalake.aio import DataLakeDirectoryClient
 from azure.core.exceptions import ResourceNotFoundError
+from starlette.responses import JSONResponse
 
 from ..dependencies import __get_all_dates_to_download, __split_into_chunks, __download_data
 from ..metrics import TracerClass, Metric
@@ -36,9 +37,9 @@ router = APIRouter(tags=['grafana'])
 tracer = TracerClass().get_tracer()
 
 
-@router.get('/grafana/{guid}', status_code=HTTPStatus.OK)
+@router.get('/grafana/{guid}')
 @Metric.histogram
-async def test_connection(guid: str, client_id: str = Header(None), client_secret: str = Header(None)):
+async def test_connection(guid: str, client_id: str = Header(None), client_secret: str = Header(None)) -> JSONResponse:
     """
     Endpoint for Grafana connectivity test. This checks if the GUID folder exist and the client_id
     and client_secret are valid.
@@ -54,12 +55,12 @@ async def test_connection(guid: str, client_id: str = Header(None), client_secre
 
     await directory_client.close()
 
-    return {'message': 'Grafana datasource used for timeseries data.'}
+    return JSONResponse(content={'message': 'Grafana datasource used for timeseries data.'}, status_code=HTTPStatus.OK)
 
 
-@router.post('/grafana/{guid}/search', status_code=HTTPStatus.OK)
+@router.post('/grafana/{guid}/search')
 @Metric.histogram
-async def search(guid: str, client_id: str = Header(None), client_secret: str = Header(None)):
+async def search(guid: str, client_id: str = Header(None), client_secret: str = Header(None)) -> JSONResponse:
     """
     Returns the valid metrics.
     """
@@ -76,13 +77,13 @@ async def search(guid: str, client_id: str = Header(None), client_secret: str = 
             metrics.sort()
 
         await directory_client.close()
-        return metrics
+        return JSONResponse(content=metrics, status_code=HTTPStatus.OK)
 
 
-@router.post('/grafana/{guid}/query', status_code=HTTPStatus.OK)
+@router.post('/grafana/{guid}/query')
 @Metric.histogram
 async def query(guid: str, request: QueryRequest,
-                client_id: str = Header(None), client_secret: str = Header(None)) -> List[Dict]:
+                client_id: str = Header(None), client_secret: str = Header(None)) -> JSONResponse:
     """
     Returns the data based on time range and target metric.
     """
@@ -123,23 +124,24 @@ async def query(guid: str, request: QueryRequest,
             span.set_tag('result_size', len(repr(results)))
 
         await directory_client.close()
-        return results
+
+        return JSONResponse(content=results, status_code=HTTPStatus.OK)
 
 
-@router.post('/grafana/{guid}/annotations', status_code=HTTPStatus.OK)
+@router.post('/grafana/{guid}/annotations')
 @Metric.histogram
-async def annotation(guid: str) -> List:
+async def annotation(guid: str) -> JSONResponse:
     """
     Returns empty list of annotations.
     """
     logger.debug('Grafana annotations requested for GUID %s', guid)
 
-    return []
+    return JSONResponse(content=[], status_code=HTTPStatus.OK)
 
 
-@router.post('/grafana/{guid}/tag-keys', status_code=HTTPStatus.OK)
+@router.post('/grafana/{guid}/tag-keys')
 @Metric.histogram
-async def tag_keys(guid: str, client_id: str = Header(None), client_secret: str = Header(None)) -> List:
+async def tag_keys(guid: str, client_id: str = Header(None), client_secret: str = Header(None)) -> JSONResponse:
     """
     Returns list of tag-keys.
     """
@@ -149,13 +151,13 @@ async def tag_keys(guid: str, client_id: str = Header(None), client_secret: str 
     grafana_settings = await __get_grafana_settings(directory_client)
 
     await directory_client.close()
-    return grafana_settings['tag_keys']
+    return JSONResponse(content=grafana_settings['tag_keys'], status_code=HTTPStatus.OK)
 
 
-@router.post('/grafana/{guid}/tag-values', status_code=HTTPStatus.OK)
+@router.post('/grafana/{guid}/tag-values')
 @Metric.histogram
 async def tag_values(guid: str, request: TagValuesRequest,
-                     client_id: str = Header(None), client_secret: str = Header(None)) -> List:
+                     client_id: str = Header(None), client_secret: str = Header(None)) -> JSONResponse:
     """
     Returns list of tag values corresponding to request key.
     """
@@ -168,7 +170,7 @@ async def tag_values(guid: str, request: TagValuesRequest,
         return grafana_settings['tag_values'][request.key]
 
     await directory_client.close()
-    return []
+    return JSONResponse(content=[], status_code=HTTPStatus.OK)
 
 
 def __is_targets_set_for_all(targets):
