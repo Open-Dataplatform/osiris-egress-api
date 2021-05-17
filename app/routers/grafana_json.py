@@ -92,7 +92,7 @@ async def query(guid: str, request: QueryRequest,
     with tracer.start_span('grafana_query') as span:
         span.set_tag('guid', guid)
         if not __is_targets_set_for_all(request.targets):
-            return []
+            return JSONResponse(content=[], status_code=HTTPStatus.OK)
 
         with tracer.start_span('get_directory_client', child_of=span):
             directory_client = await __get_directory_client(guid, client_id, client_secret)
@@ -167,7 +167,7 @@ async def tag_values(guid: str, request: TagValuesRequest,
     grafana_settings = await __get_grafana_settings(directory_client)
 
     if request.key in grafana_settings['tag_values']:
-        return grafana_settings['tag_values'][request.key]
+        return JSONResponse(content=grafana_settings['tag_values'][request.key], status_code=HTTPStatus.OK)
 
     await directory_client.close()
     return JSONResponse(content=[], status_code=HTTPStatus.OK)
