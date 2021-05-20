@@ -73,6 +73,37 @@ async def download_json_file(guid: str,   # pylint: disable=too-many-locals
     If to_date is left out, only one data point is retrieved.
     """
     logger.debug('download jao data requested')
+    return await __download_json_file(guid, token, from_date, to_date)
+
+
+@router.get('/jao/', response_class=StreamingResponse)
+@Metric.histogram
+async def download_jao_data(horizon: str,  # pylint: disable=too-many-locals
+                            from_date: Optional[str] = None,
+                            to_date: Optional[str] = None,
+                            token: str = Security(access_token_header)) -> StreamingResponse:
+    """
+    Download JSON endpoint with data from from_date to to_date (time period).
+    If form_date is left out, current UTC time is used.
+    If to_date is left out, only one data point is retrieved.
+    """
+    logger.debug('download jao data requested')
+    if horizon == "Yearly":
+        guid = config['JAO']['yearly_guid']
+    elif horizon == "Monthly":
+        guid = config['JAO']['monthly_guid']
+    else:
+        message = '(ValueError) horizon value can only be Yearly or Monthly'
+        logger.error(message)
+        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=message)
+
+    return await __download_json_file(guid, token, from_date, to_date)
+
+
+async def __download_json_file(guid: str,   # pylint: disable=too-many-locals
+                               token: str,
+                               from_date: Optional[str] = None,
+                               to_date: Optional[str] = None) -> StreamingResponse:
 
     from_date_obj, to_date_obj, time_resolution_enum = __parse_date_arguments(from_date, to_date)
 

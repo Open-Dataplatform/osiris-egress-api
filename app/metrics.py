@@ -3,7 +3,6 @@ Module to wrap all metrics for prometheus.
 """
 import time
 from functools import wraps
-from http import HTTPStatus
 
 from fastapi import HTTPException, Response
 
