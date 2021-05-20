@@ -77,7 +77,6 @@ async def download_json_file(guid: str,   # pylint: disable=too-many-locals
 
 
 @router.get('/jao/', response_class=StreamingResponse)
-@Metric.histogram
 async def download_jao_data(horizon: str,  # pylint: disable=too-many-locals
                             from_date: Optional[str] = None,
                             to_date: Optional[str] = None,
