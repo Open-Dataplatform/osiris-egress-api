@@ -76,7 +76,7 @@ async def download_json_file(guid: str,   # pylint: disable=too-many-locals
     return await __download_json_file(guid, token, from_date, to_date)
 
 
-@router.get('/jao/', response_class=StreamingResponse)
+@router.get('/jao', response_class=StreamingResponse)
 async def download_jao_data(horizon: str,  # pylint: disable=too-many-locals
                             from_date: Optional[str] = None,
                             to_date: Optional[str] = None,
@@ -113,7 +113,7 @@ async def __download_json_file(guid: str,   # pylint: disable=too-many-locals
                 directory_client = filesystem_client.get_directory_client(guid)
 
             with tracer.start_span('check_directory_exists', child_of=span):
-                __check_directory_exist(directory_client)
+                await __check_directory_exist(directory_client)
 
             with tracer.start_span('retrieve_data', child_of=span) as retrieve_data_span:
                 if to_date_obj:
@@ -161,9 +161,9 @@ async def __download_files(timeslot_chunk: List[datetime],
     return await asyncio.gather(*[__download(timeslot) for timeslot in timeslot_chunk])
 
 
-def __check_directory_exist(directory_client: DataLakeDirectoryClient):
+async def __check_directory_exist(directory_client: DataLakeDirectoryClient):
     try:
-        directory_client.get_directory_properties()
+        await directory_client.get_directory_properties()
     except ResourceNotFoundError as error:
         message = f'({type(error).__name__}) The given dataset doesnt exist: {error}'
         logger.error(message)
