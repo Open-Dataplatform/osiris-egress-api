@@ -82,6 +82,10 @@ async def __get_file_client(directory_client: DataLakeDirectoryClient, path):
     except ResourceNotFoundError:
         # We return None to indicate that the file doesnt exist.
         return None
+    except HttpResponseError as error:
+        message = f'({type(error).__name__}) Problems checking if file exist: {error}'
+        logger.error(message)
+        raise HTTPException(status_code=error.status_code, detail=message) from error
 
     return file_client
 
