@@ -21,7 +21,7 @@ from osiris.core.azure_client_authorization import AzureCredentialAIO
 from osiris.core.configuration import Configuration
 from osiris.core.enums import TimeResolution
 
-from ..dependencies import __get_all_dates_to_download, __download_data, __split_into_chunks
+from ..dependencies import __get_all_dates_to_download, __download_data, __split_into_chunks, __check_directory_exist
 from ..metrics import TracerClass, Metric
 
 configuration = Configuration(__file__)
@@ -159,15 +159,6 @@ async def __download_files(timeslot_chunk: List[datetime],
         return json_data
 
     return await asyncio.gather(*[__download(timeslot) for timeslot in timeslot_chunk])
-
-
-async def __check_directory_exist(directory_client: DataLakeDirectoryClient):
-    try:
-        await directory_client.get_directory_properties()
-    except ResourceNotFoundError as error:
-        message = f'({type(error).__name__}) The given dataset doesnt exist: {error}'
-        logger.error(message)
-        raise HTTPException(status_code=error.status_code, detail=message) from error
 
 
 def __get_path_for_arbitrary_file(file_date: datetime, guid: str, filesystem_client: FileSystemClient) -> str:

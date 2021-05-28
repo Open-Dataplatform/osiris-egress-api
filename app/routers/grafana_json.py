@@ -22,7 +22,7 @@ from azure.storage.filedatalake.aio import DataLakeDirectoryClient
 from azure.core.exceptions import ResourceNotFoundError
 from starlette.responses import JSONResponse
 
-from ..dependencies import __get_all_dates_to_download, __split_into_chunks, __download_data
+from ..dependencies import __get_all_dates_to_download, __split_into_chunks, __download_data, __check_directory_exist
 from ..metrics import TracerClass, Metric
 from ..schemas.json_request import QueryRequest, TagValuesRequest
 
@@ -233,6 +233,8 @@ def __dataframe_to_table_response(data_df: DataFrame) -> List[Dict]:
     response: List[Dict] = []
 
     no_index_data_df = data_df.reset_index(level=0)
+    no_index_data_df['datetime'] = no_index_data_df['datetime'].apply(lambda x: x.isoformat())
+
     response.append({'type': 'table',
                      'columns': no_index_data_df.columns.map(lambda col: {'text': col}).tolist(),
                      'rows': no_index_data_df.where(pd.notnull(no_index_data_df), None).values.tolist()})
@@ -249,12 +251,7 @@ async def __get_directory_client(guid: str, client_id: str, client_secret: str) 
     credential = client_auth.get_credential_async()
 
     directory_client = DataLakeDirectoryClient(account_url, filesystem_name, guid, credential=credential)
-    try:
-        await directory_client.get_directory_properties()  # Test if the directory exist otherwise return error.
-    except ResourceNotFoundError as error:
-        message = f'({type(error).__name__}) The given dataset doesnt exist: {error}'
-        logger.error(message)
-        raise HTTPException(status_code=error.status_code, detail=message) from error
+    __check_directory_exist(directory_client)
 
     return directory_client
 
