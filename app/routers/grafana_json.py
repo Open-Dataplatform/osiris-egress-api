@@ -237,7 +237,7 @@ def __dataframe_to_table_response(data_df: DataFrame, grafana_settings: Dict) ->
     date_key_field = grafana_settings['date_key_field']
 
     no_index_data_df = data_df.reset_index(level=0)
-    no_index_data_df[date_key_field] = no_index_data_df['datetime'].apply(lambda x: x.isoformat())
+    no_index_data_df[date_key_field] = no_index_data_df[date_key_field].apply(lambda x: x.isoformat())
 
     response.append({'type': 'table',
                      'columns': no_index_data_df.columns.map(lambda col: {'text': col}).tolist(),
@@ -255,7 +255,7 @@ async def __get_directory_client(guid: str, client_id: str, client_secret: str) 
     credential = client_auth.get_credential_async()
 
     directory_client = DataLakeDirectoryClient(account_url, filesystem_name, guid, credential=credential)
-    __check_directory_exist(directory_client)
+    await __check_directory_exist(directory_client)
 
     return directory_client
 
