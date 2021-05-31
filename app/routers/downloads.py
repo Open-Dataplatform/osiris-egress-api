@@ -22,6 +22,7 @@ from osiris.core.configuration import Configuration
 from osiris.core.enums import TimeResolution
 
 from ..dependencies import __get_all_dates_to_download, __download_data, __split_into_chunks, __download_file
+from ..dependencies import __get_all_dates_to_download, __download_data, __split_into_chunks, __check_directory_exist
 from ..metrics import TracerClass, Metric
 
 configuration = Configuration(__file__)

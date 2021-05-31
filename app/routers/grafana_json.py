@@ -22,7 +22,7 @@ from azure.storage.filedatalake.aio import DataLakeDirectoryClient
 from azure.core.exceptions import ResourceNotFoundError
 from starlette.responses import JSONResponse
 
-from ..dependencies import __get_all_dates_to_download, __split_into_chunks, __download_data
+from ..dependencies import __get_all_dates_to_download, __split_into_chunks, __download_data, __check_directory_exist
 from ..metrics import TracerClass, Metric
 from ..schemas.json_request import QueryRequest, TagValuesRequest
 
@@ -114,7 +114,8 @@ async def query(guid: str, request: QueryRequest,
         results = []
         with tracer.start_span('data_frame_to_response', child_of=span):
             for target in request.targets:
-                results.extend(__dataframe_to_response(data_df, target.type, target.target, target.data, freq))
+                results.extend(__dataframe_to_response(data_df, target.type, target.target,
+                                                       target.data, freq, grafana_settings))
 
         with tracer.start_span('get_size_of_result', child_of=span):
             # We use repr(.) here, which is the printable representation of the object
@@ -181,8 +182,9 @@ def __is_targets_set_for_all(targets):
     return True
 
 
+# pylint: disable=too-many-arguments
 def __dataframe_to_response(data_df: DataFrame, target_type: str, target: str,
-                            additional_filters: Dict, freq: str) -> List[Dict]:
+                            additional_filters: Dict, freq: str, grafana_settings: Dict) -> List[Dict]:
     response: List[Dict] = []
 
     if data_df is None or data_df.empty:
@@ -216,7 +218,7 @@ def __dataframe_to_response(data_df: DataFrame, target_type: str, target: str,
     if target_type == 'timeseries':
         return __dataframe_to_timeserie_response(data_df, target_return_name)
 
-    return __dataframe_to_table_response(data_df)
+    return __dataframe_to_table_response(data_df, grafana_settings)
 
 
 def __dataframe_to_timeserie_response(data_df: DataFrame, target_return_name: str) -> List[Dict]:
@@ -229,10 +231,14 @@ def __dataframe_to_timeserie_response(data_df: DataFrame, target_return_name: st
     return [{'target': target_return_name, 'datapoints': list(zip(values, timestamps))}]
 
 
-def __dataframe_to_table_response(data_df: DataFrame) -> List[Dict]:
+def __dataframe_to_table_response(data_df: DataFrame, grafana_settings: Dict) -> List[Dict]:
     response: List[Dict] = []
 
+    date_key_field = grafana_settings['date_key_field']
+
     no_index_data_df = data_df.reset_index(level=0)
+    no_index_data_df[date_key_field] = no_index_data_df[date_key_field].apply(lambda x: x.isoformat())
+
     response.append({'type': 'table',
                      'columns': no_index_data_df.columns.map(lambda col: {'text': col}).tolist(),
                      'rows': no_index_data_df.where(pd.notnull(no_index_data_df), None).values.tolist()})
@@ -249,12 +255,7 @@ async def __get_directory_client(guid: str, client_id: str, client_secret: str) 
     credential = client_auth.get_credential_async()
 
     directory_client = DataLakeDirectoryClient(account_url, filesystem_name, guid, credential=credential)
-    try:
-        await directory_client.get_directory_properties()  # Test if the directory exist otherwise return error.
-    except ResourceNotFoundError as error:
-        message = f'({type(error).__name__}) The given dataset doesnt exist: {error}'
-        logger.error(message)
-        raise HTTPException(status_code=error.status_code, detail=message) from error
+    await __check_directory_exist(directory_client)
 
     return directory_client
 

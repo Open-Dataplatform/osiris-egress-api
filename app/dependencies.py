@@ -82,6 +82,10 @@ async def __get_file_client(directory_client: DataLakeDirectoryClient, path):
     except ResourceNotFoundError:
         # We return None to indicate that the file doesnt exist.
         return None
+    except HttpResponseError as error:
+        message = f'({type(error).__name__}) Problems checking if file exist: {error}'
+        logger.error(message)
+        raise HTTPException(status_code=error.status_code, detail=message) from error
 
     return file_client
 
@@ -93,5 +97,14 @@ async def __download_file(filename: str, directory_client: DataLakeDirectoryClie
         return downloaded_file
     except HttpResponseError as error:
         message = f'({type(error).__name__}) File could not be downloaded: {error}'
+        logger.error(message)
+        raise HTTPException(status_code=error.status_code, detail=message) from error
+
+
+async def __check_directory_exist(directory_client: DataLakeDirectoryClient):
+    try:
+        await directory_client.get_directory_properties()
+    except ResourceNotFoundError as error:
+        message = f'({type(error).__name__}) The given dataset doesnt exist: {error}'
         logger.error(message)
         raise HTTPException(status_code=error.status_code, detail=message) from error
