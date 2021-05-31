@@ -6,7 +6,7 @@ import os
 from datetime import datetime
 import asyncio
 from http import HTTPStatus
-from io import StringIO
+from io import StringIO, BytesIO
 from typing import Dict, Optional, List
 import pandas as pd
 
@@ -21,7 +21,7 @@ from osiris.core.azure_client_authorization import AzureCredentialAIO
 from osiris.core.configuration import Configuration
 from osiris.core.enums import TimeResolution
 
-from ..dependencies import __get_all_dates_to_download, __download_data, __split_into_chunks
+from ..dependencies import __get_all_dates_to_download, __download_data, __split_into_chunks, __download_file
 from ..metrics import TracerClass, Metric
 
 configuration = Configuration(__file__)
@@ -97,6 +97,52 @@ async def download_jao_data(horizon: str,  # pylint: disable=too-many-locals
         raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=message)
 
     return await __download_json_file(guid, token, from_date, to_date)
+
+
+@router.get('/ikontrol/getallprojects', response_class=StreamingResponse)
+async def download_ikontrol_project_ids(token: str = Security(access_token_header)) -> StreamingResponse:
+    """
+    Download a list of all projects with project details.
+    """
+    logger.debug('download iKontrol project ids requested')
+    async with await __get_filesystem_client(token) as filesystem_client:
+        file_path = 'ProjectDetails.json'
+
+        stream = await __get_file_stream_for_ikontrol_file(file_path, filesystem_client)
+
+        return StreamingResponse(stream, media_type='application/json')
+
+
+@router.get('/ikontrol', response_class=StreamingResponse)
+async def download_ikontrol_data(project_id: int, token: str = Security(access_token_header)) -> StreamingResponse:
+    """
+    Download the data for a project using the project ID.
+    """
+    logger.debug('download iKontrol data requested')
+    async with await __get_filesystem_client(token) as filesystem_client:
+        file_path = f'{project_id}/{project_id}.json'
+
+        stream = await __get_file_stream_for_ikontrol_file(file_path, filesystem_client)
+
+        return StreamingResponse(stream, media_type='application/json')
+
+
+@router.get('/ikontrol/getzip', response_class=StreamingResponse)
+async def download_ikontrol_zip(project_id: int, token: str = Security(access_token_header)) -> StreamingResponse:
+    """
+    Download a project ZIP file using the project ID.
+    """
+    logger.debug('download iKontrol project zip requested')
+    async with await __get_filesystem_client(token) as filesystem_client:
+        guid = config['iKontrol']['guid']
+        directory_client = filesystem_client.get_directory_client(guid)
+        await __check_directory_exist(directory_client)
+
+        zip_path = f'{project_id}/{project_id}.zip'
+
+        stream = await __get_file_stream_for_ikontrol_file(zip_path, filesystem_client)
+
+        return StreamingResponse(stream, media_type='application/zip')
 
 
 async def __download_json_file(guid: str,   # pylint: disable=too-many-locals
@@ -253,3 +299,16 @@ def __parse_date_arguments(from_date, to_date):
     from_date_obj, time_resolution = __parse_date_str(from_date)
     to_date_obj, _ = __parse_date_str(to_date)
     return from_date_obj, to_date_obj, time_resolution
+
+
+async def __get_file_stream_for_ikontrol_file(file_path: str, filesystem_client: FileSystemClient) -> BytesIO:
+    guid = config['iKontrol']['guid']
+    directory_client = filesystem_client.get_directory_client(guid)
+    await __check_directory_exist(directory_client)
+
+    file_download = await __download_file(file_path, directory_client)
+    file_content = await file_download.readall()
+
+    stream = BytesIO(file_content)
+
+    return stream
