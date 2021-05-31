@@ -134,10 +134,6 @@ async def download_ikontrol_zip(project_id: int, token: str = Security(access_to
     """
     logger.debug('download iKontrol project zip requested')
     async with await __get_filesystem_client(token) as filesystem_client:
-        guid = config['iKontrol']['guid']
-        directory_client = filesystem_client.get_directory_client(guid)
-        await __check_directory_exist(directory_client)
-
         zip_path = f'{project_id}/{project_id}.zip'
 
         stream = await __get_file_stream_for_ikontrol_file(zip_path, filesystem_client)
