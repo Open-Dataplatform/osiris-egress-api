@@ -114,7 +114,7 @@ async def download_ikontrol_project_ids(token: str = Security(access_token_heade
         return StreamingResponse(stream, media_type='application/json')
 
 
-@router.get('/ikontrol', response_class=StreamingResponse)
+@router.get('/ikontrol/{project_id}', response_class=StreamingResponse)
 async def download_ikontrol_data(project_id: int, token: str = Security(access_token_header)) -> StreamingResponse:
     """
     Download the data for a project using the project ID.
@@ -128,7 +128,7 @@ async def download_ikontrol_data(project_id: int, token: str = Security(access_t
         return StreamingResponse(stream, media_type='application/json')
 
 
-@router.get('/ikontrol/getzip', response_class=StreamingResponse)
+@router.get('/ikontrol/getzip/{project_id}', response_class=StreamingResponse)
 async def download_ikontrol_zip(project_id: int, token: str = Security(access_token_header)) -> StreamingResponse:
     """
     Download a project ZIP file using the project ID.
