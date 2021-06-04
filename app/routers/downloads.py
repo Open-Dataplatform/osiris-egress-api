@@ -1,22 +1,21 @@
 """
 Contains endpoints for downloading data to the DataPlatform.
 """
+import asyncio
 import json
 import os
 from datetime import datetime
-import asyncio
 from http import HTTPStatus
 from io import StringIO, BytesIO
-from typing import Optional, List
+from typing import Optional, List, Dict
+
 import pandas as pd
-
-from azure.storage.filedatalake.aio import DataLakeDirectoryClient, FileSystemClient
 from azure.core.exceptions import ResourceNotFoundError
+from azure.storage.filedatalake.aio import DataLakeDirectoryClient, FileSystemClient
 from fastapi import APIRouter, HTTPException, Security
-from fastapi.security.api_key import APIKeyHeader
 from fastapi.responses import StreamingResponse
+from fastapi.security.api_key import APIKeyHeader
 from jaeger_client import Span
-
 from osiris.core.azure_client_authorization import AzureCredentialAIO
 from osiris.core.configuration import Configuration
 from osiris.core.enums import TimeResolution
@@ -140,6 +139,64 @@ async def download_ikontrol_zip(project_id: int, token: str = Security(access_to
         stream = await __get_file_stream_for_ikontrol_file(zip_path, filesystem_client)
 
         return StreamingResponse(stream, media_type='application/zip')
+
+
+@router.get('/dmi/{year}/{month}/{day}')
+async def get_dmi_files_for_day(year: int, month: int, day: int, token: str = Security(access_token_header)) -> Dict:
+    """
+    Returns a dictionary of all files recursively and their parent directory under the given date.
+    """
+    logger.debug('get DMI files for day requested')
+    async with await __get_filesystem_client(token) as filesystem_client:
+        datetime_type_guid = config['DMI']['datetime_type_guid']
+        path = f'{datetime_type_guid}/year={year}/month={month:02d}/day={day:02d}/'
+
+        result = {}
+        paths = filesystem_client.get_paths(path=path)
+        async for path in paths:
+            if not path.is_directory:
+                directory, filename = path.name.rsplit('/', maxsplit=1)
+                if directory not in result:
+                    result[directory] = []
+                result[directory].append(filename)
+
+        return result
+
+
+@router.get('/dmi/{year}/{month}/{day}/{hour}/{weather_type}', response_class=StreamingResponse)
+async def download_dmi_datetime_type(year: int,
+                                     month: int,
+                                     day: int,
+                                     hour: int,
+                                     weather_type: str,
+                                     token: str = Security(access_token_header)) -> StreamingResponse:
+    """
+    Download the parquet file for the specific weather type on the given date and hour.
+
+    Use `/dmi/{year}/{month}/{day}` to retrieve a list of available files and their full path including
+    the `hour=nn` partition.
+    """
+    logger.debug('download DMI Datetime/Type requested')
+    async with await __get_filesystem_client(token) as filesystem_client:
+        datetime_type_guid = config['DMI']['datetime_type_guid']
+        path = f'{datetime_type_guid}/year={year}/month={month:02d}/day={day:02d}/hour={hour:02d}/'
+        paths = await __get_filepaths(path, filesystem_client)
+        for path in paths:
+            _, filename = path.rsplit('/', maxsplit=1)
+            if weather_type in filename:
+                stream = await __download_file(path, filesystem_client)
+                stream = await stream.readall()
+                stream = BytesIO(stream)
+                return StreamingResponse(stream, media_type='application/octet-stream')
+
+
+async def __get_filepaths(path, filesystem_client):
+    paths = filesystem_client.get_paths(path=path)
+    return [path.name async for path in paths if not path.is_directory]
+
+
+async def __test_get():
+    return BytesIO(b'abc')
 
 
 async def __download_json_file(guid: str,   # pylint: disable=too-many-locals
