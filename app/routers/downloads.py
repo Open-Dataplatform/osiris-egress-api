@@ -5,6 +5,7 @@ import asyncio
 import json
 import os
 from datetime import datetime
+from enum import Enum
 from http import HTTPStatus
 from io import StringIO, BytesIO
 from typing import Optional, List, Dict
@@ -13,7 +14,7 @@ import pandas as pd
 from azure.core.exceptions import ResourceNotFoundError
 from azure.storage.filedatalake.aio import DataLakeDirectoryClient, FileSystemClient
 from fastapi import APIRouter, HTTPException, Security
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.security.api_key import APIKeyHeader
 from jaeger_client import Span
 from osiris.core.azure_client_authorization import AzureCredentialAIO
@@ -21,7 +22,7 @@ from osiris.core.configuration import Configuration
 from osiris.core.enums import TimeResolution
 
 from ..dependencies import (__get_all_dates_to_download, __download_data, __split_into_chunks,
-                            __download_file, __check_directory_exist)
+                            __download_file, __check_directory_exist, __get_filepaths)
 from ..metrics import TracerClass, Metric
 
 configuration = Configuration(__file__)
@@ -33,6 +34,16 @@ access_token_header = APIKeyHeader(name='Authorization', auto_error=True)
 router = APIRouter(tags=['downloads'])
 
 tracer = TracerClass().get_tracer()
+
+
+class DMIWeatherType(str, Enum):
+    radiation_diffus = 'radiation_diffus'
+    radiation_global = 'radiation_global'
+    temperatur_2m = 'temperatur_2m'
+    wind_direction_100m = 'wind_direction_100m'
+    wind_direction_10m = 'wind_direction_10m'
+    wind_speed_100m = 'wind_speed_100m'
+    wind_speed_10m = 'wind_speed_10m'
 
 
 # @router.get('/{guid}', response_class=StreamingResponse)
@@ -61,12 +72,12 @@ tracer = TracerClass().get_tracer()
 #             return StreamingResponse(stream.chunks(), media_type='application/octet-stream')
 
 
-@router.get('/{guid}/json', response_class=StreamingResponse)
+@router.get('/{guid}/json', response_class=JSONResponse)
 @Metric.histogram
 async def download_json_file(guid: str,   # pylint: disable=too-many-locals
                              from_date: Optional[str] = None,
                              to_date: Optional[str] = None,
-                             token: str = Security(access_token_header)) -> StreamingResponse:
+                             token: str = Security(access_token_header)) -> JSONResponse:
     """
     Download JSON endpoint with data from from_date to to_date (time period).
     If form_date is left out, current UTC time is used.
@@ -76,11 +87,11 @@ async def download_json_file(guid: str,   # pylint: disable=too-many-locals
     return await __download_json_file(guid, token, from_date, to_date)
 
 
-@router.get('/jao', response_class=StreamingResponse)
+@router.get('/jao', response_class=JSONResponse)
 async def download_jao_data(horizon: str,  # pylint: disable=too-many-locals
                             from_date: Optional[str] = None,
                             to_date: Optional[str] = None,
-                            token: str = Security(access_token_header)) -> StreamingResponse:
+                            token: str = Security(access_token_header)) -> JSONResponse:
     """
     Download JSON endpoint with data from from_date to to_date (time period).
     If form_date is left out, current UTC time is used.
@@ -168,7 +179,7 @@ async def download_dmi_datetime_type(year: int,
                                      month: int,
                                      day: int,
                                      hour: int,
-                                     weather_type: str,
+                                     weather_type: DMIWeatherType,
                                      token: str = Security(access_token_header)) -> StreamingResponse:
     """
     Download the parquet file for the specific weather type on the given date and hour.
@@ -180,30 +191,35 @@ async def download_dmi_datetime_type(year: int,
     async with await __get_filesystem_client(token) as filesystem_client:
         datetime_type_guid = config['DMI']['datetime_type_guid']
         path = f'{datetime_type_guid}/year={year}/month={month:02d}/day={day:02d}/hour={hour:02d}/'
-        paths = await __get_filepaths(path, filesystem_client)
-        for path in paths:
-            _, filename = path.rsplit('/', maxsplit=1)
-            if weather_type in filename:
-                stream = await __download_file(path, filesystem_client)
-                stream = await stream.readall()
-                stream = BytesIO(stream)
-                return StreamingResponse(stream, media_type='application/octet-stream')
+
+        stream = await __get_file_stream_for_dmi_dt_type_file(path, weather_type, filesystem_client)
+
+        return StreamingResponse(stream, media_type='application/octet-stream')
 
 
-async def __get_filepaths(path, filesystem_client):
-    paths = filesystem_client.get_paths(path=path)
-    return [path.name async for path in paths if not path.is_directory]
+@router.get('/dmi/{weather_type}/')
+async def get_dmi_coords_for_weather_type(weather_type: DMIWeatherType,
+                                         token: str = Security(access_token_header)) -> Dict:
+    logger.debug('get DMI coords for weather type requested')
+    async with await __get_filesystem_client(token) as filesystem_client:
+        datetime_type_guid = config['DMI']['type_coordinate_guid']
+        path = f'{datetime_type_guid}/weather_type={weather_type.value}'
 
+        result = []
+        paths = filesystem_client.get_paths(path=path)
+        async for path in paths:
+            if not path.is_directory:
+                continue
+            if path.name not in result and 'lat=' in path.name and 'lon=' in path.name:
+                result.append(path.name)
 
-async def __test_get():
-    return BytesIO(b'abc')
+        return result
 
 
 async def __download_json_file(guid: str,   # pylint: disable=too-many-locals
                                token: str,
                                from_date: Optional[str] = None,
-                               to_date: Optional[str] = None) -> StreamingResponse:
-
+                               to_date: Optional[str] = None) -> JSONResponse:
     from_date_obj, to_date_obj, time_resolution_enum = __parse_date_arguments(from_date, to_date)
 
     with tracer.start_span('download_json_file') as span:
@@ -235,8 +251,7 @@ async def __download_json_file(guid: str,   # pylint: disable=too-many-locals
         if not concat_response:
             status_code = HTTPStatus.NO_CONTENT
 
-        stream = StringIO(json.dumps(concat_response))
-        return StreamingResponse(stream, media_type='application/octet-stream', status_code=status_code)
+        return JSONResponse(concat_response, status_code=status_code)
 
 
 async def __download_files(timeslot_chunk: List[datetime],
@@ -357,3 +372,17 @@ async def __get_file_stream_for_ikontrol_file(file_path: str, filesystem_client:
     stream = BytesIO(file_content)
 
     return stream
+
+
+async def __get_file_stream_for_dmi_dt_type_file(path: str, weather_type: DMIWeatherType,  filesystem_client):
+    guid = config['DMI']['datetime_type_guid']
+    directory_client = filesystem_client.get_directory_client(guid)
+    await __check_directory_exist(directory_client)
+
+    paths = await __get_filepaths(path, filesystem_client)
+    for path in paths:
+        _, filename = path.rsplit('/', maxsplit=1)
+        if weather_type.value in filename:
+            file_download = await __download_file(path, filesystem_client)
+            file_content = await file_download.readall()
+            return BytesIO(file_content)

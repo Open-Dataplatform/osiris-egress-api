@@ -2,15 +2,17 @@
 Contains dependencies used in several places of the application.
 """
 from datetime import datetime
-from typing import Optional, Union
+from typing import Optional, Union, List
 import pandas as pd
+from osiris.azure_client_authorization import AzureCredentialAIO
 
 from pandas import DatetimeIndex
 from fastapi import HTTPException
 from jaeger_client import Span
 
 from azure.core.exceptions import HttpResponseError, ResourceNotFoundError
-from azure.storage.filedatalake.aio import DataLakeDirectoryClient, DataLakeFileClient, StorageStreamDownloader
+from azure.storage.filedatalake.aio import DataLakeDirectoryClient, DataLakeFileClient, StorageStreamDownloader, \
+    FileSystemClient
 
 from osiris.core.configuration import Configuration
 from osiris.core.io import get_file_path_with_respect_to_time_resolution
@@ -24,6 +26,14 @@ config = configuration.get_config()
 logger = configuration.get_logger()
 
 tracer = TracerClass().get_tracer()
+
+
+async def __get_filesystem_client(token: str) -> FileSystemClient:
+    account_url = config['Azure Storage']['account_url']
+    filesystem_name = config['Azure Storage']['filesystem_name']
+    credential = AzureCredentialAIO(token)
+
+    return FileSystemClient(account_url, filesystem_name, credential=credential)
 
 
 def __get_all_dates_to_download(from_date: datetime, to_date: datetime,
@@ -108,3 +118,9 @@ async def __check_directory_exist(directory_client: DataLakeDirectoryClient):
         message = f'({type(error).__name__}) The given dataset doesnt exist: {error}'
         logger.error(message)
         raise HTTPException(status_code=error.status_code, detail=message) from error
+
+
+async def __get_filepaths(path, filesystem_client) -> List[str]:
+    """ Returns a list of paths below `path` that are not directories. """
+    paths = filesystem_client.get_paths(path=path)
+    return [path.name async for path in paths if not path.is_directory]
