@@ -34,15 +34,20 @@ class Metric:
         async def wrapper(*args, **kwargs):
             start_time = time.time()
 
+            if 'guid' in kwargs:
+                guid = kwargs['guid']
+            else:
+                guid = 'not available'
+
             try:
                 result: Response = await func(*args, **kwargs)
             except HTTPException as error:
                 time_taken = time.time() - start_time
-                Metric.HISTOGRAM.labels(func.__name__, kwargs['guid'], str(error.status_code)).observe(time_taken)
+                Metric.HISTOGRAM.labels(func.__name__, guid, error.status_code).observe(time_taken)
                 raise error
 
             time_taken = time.time() - start_time
-            Metric.HISTOGRAM.labels(func.__name__, kwargs['guid'], result.status_code).observe(time_taken)
+            Metric.HISTOGRAM.labels(func.__name__, guid, result.status_code).observe(time_taken)
             return result
 
         return wrapper

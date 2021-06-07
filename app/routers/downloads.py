@@ -67,6 +67,7 @@ async def download_json_file(guid: str,   # pylint: disable=too-many-locals
 
 
 @router.get('/jao', response_class=JSONResponse)
+@Metric.histogram
 async def download_jao_data(horizon: str,  # pylint: disable=too-many-locals
                             from_date: Optional[str] = None,
                             to_date: Optional[str] = None,
@@ -90,6 +91,7 @@ async def download_jao_data(horizon: str,  # pylint: disable=too-many-locals
 
 
 @router.get('/ikontrol/getallprojects', response_class=StreamingResponse)
+@Metric.histogram
 async def download_ikontrol_project_ids(token: str = Security(access_token_header)) -> StreamingResponse:
     """
     Download a list of all projects with project details.
@@ -104,6 +106,7 @@ async def download_ikontrol_project_ids(token: str = Security(access_token_heade
 
 
 @router.get('/ikontrol/{project_id}', response_class=StreamingResponse)
+@Metric.histogram
 async def download_ikontrol_data(project_id: int, token: str = Security(access_token_header)) -> StreamingResponse:
     """
     Download the data for a project using the project ID.
@@ -118,6 +121,7 @@ async def download_ikontrol_data(project_id: int, token: str = Security(access_t
 
 
 @router.get('/ikontrol/getzip/{project_id}', response_class=StreamingResponse)
+@Metric.histogram
 async def download_ikontrol_zip(project_id: int, token: str = Security(access_token_header)) -> StreamingResponse:
     """
     Download a project ZIP file using the project ID.
