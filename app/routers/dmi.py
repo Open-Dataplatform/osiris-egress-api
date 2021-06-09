@@ -56,16 +56,7 @@ async def get_dmi_coords_for_weather_type(weather_type: EDMIWeatherType,
         datetime_type_guid = config['DMI']['type_coordinate_guid']
         path = f'{datetime_type_guid}/weather_type={weather_type.value}'
 
-        result = []
-        paths = filesystem_client.get_paths(path=path)
-        async for filepath in paths:
-            if not filepath.is_directory:
-                continue
-            if filepath.name not in result and 'lat=' in filepath.name and 'lon=' in filepath.name:
-                lat, lon = filepath.name.split('/')[-2:]
-                lat = lat.replace('lat=', '')
-                lon = lon.replace('lon=', '')
-                result.append({'latitude': lat, 'longitude': lon})
+        result = await __get_coordinates_for_dmi_weather_type(path, filesystem_client)
 
         return result
 
@@ -109,8 +100,21 @@ async def __get_file_stream_for_dmi_dt_type_file(path: str, weather_type: EDMIWe
     paths = await __get_filepaths(path, filesystem_client)
     for filepath in paths:
         _, filename = filepath.rsplit('/', maxsplit=1)
-        print(filename)
         if weather_type.value in filename:
             file_download = await __download_file(filepath, filesystem_client)
             file_content = await file_download.readall()
             return BytesIO(file_content)
+
+
+async def __get_coordinates_for_dmi_weather_type(path: str, filesystem_client):
+    result = []
+    paths = filesystem_client.get_paths(path=path)
+    async for filepath in paths:
+        if not filepath.is_directory:
+            continue
+        if filepath.name not in result and 'lat=' in filepath.name and 'lon=' in filepath.name:
+            lat, lon = filepath.name.split('/')[-2:]
+            lat = lat.replace('lat=', '')
+            lon = lon.replace('lon=', '')
+            result.append({'latitude': lat, 'longitude': lon})
+    return result
