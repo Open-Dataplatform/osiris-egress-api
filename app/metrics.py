@@ -34,8 +34,8 @@ class Metric:
         async def wrapper(*args, **kwargs):
             start_time = time.time()
 
-            if 'guid' in kwargs:
-                guid = kwargs['guid']
+            if kwargs.get('guid'):
+                guid = kwargs.get('guid')
             else:
                 guid = 'not available'
 
