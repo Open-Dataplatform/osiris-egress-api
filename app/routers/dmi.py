@@ -5,7 +5,7 @@ from io import BytesIO
 from typing import List, Dict, Any
 
 from fastapi import APIRouter, Security
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.security.api_key import APIKeyHeader
 from osiris.core.configuration import Configuration
 
@@ -25,7 +25,7 @@ tracer = TracerClass().get_tracer()
 
 
 @router.get('/dmi/{year}/{month}/{day}/{hour}/{weather_type}', response_class=StreamingResponse)
-async def download_dmi_datetime_type(year: int,     # pylint: disable=too-many-arguments
+async def download_dmi_datetime_type(year: int,  # pylint: disable=too-many-arguments
                                      month: int,
                                      day: int,
                                      hour: int,
@@ -44,7 +44,7 @@ async def download_dmi_datetime_type(year: int,     # pylint: disable=too-many-a
         return StreamingResponse(stream, media_type='application/octet-stream')
 
 
-@router.get('/dmi/{weather_type}', response_model=List[CoordinatesModel])
+@router.get('/dmi/{weather_type}/', response_model=List[CoordinatesModel])
 async def get_dmi_coords_for_weather_type(weather_type: EDMIWeatherType,
                                           token: str = Security(access_token_header)) -> List[Dict[str, Any]]:
     """
@@ -59,6 +59,22 @@ async def get_dmi_coords_for_weather_type(weather_type: EDMIWeatherType,
         result = await __get_coordinates_for_dmi_weather_type(path, filesystem_client)
 
         return result
+
+
+@router.get('/dmi/{weather_type}/{lat}/{lon}/', response_class=JSONResponse)
+async def get_dmi_years_for_weather_type_and_coords(weather_type: EDMIWeatherType, lat: float, lon: float,
+                                                    token: str = Security(access_token_header)) -> JSONResponse:
+    """
+    Returns available years for the given weather_type and coordinates.
+    """
+    logger.debug('get DMI years for weather type and coords requested')
+    async with await __get_filesystem_client(token) as filesystem_client:
+        guid = config['DMI']['type_coordinate_guid']
+        path = f'{guid}/weather_type={weather_type.value}/lat={lat:.2f}/lon={lon:.2f}'
+
+        result = await __get_years_for_dmi_weather_type_and_coords(path, filesystem_client)
+
+        return JSONResponse(result)
 
 
 @router.get('/dmi/{weather_type}/{lat}/{lon}/{year}', response_class=StreamingResponse)
@@ -104,6 +120,15 @@ async def __get_file_stream_for_dmi_dt_type_file(path: str, weather_type: EDMIWe
             file_download = await __download_file(filepath, filesystem_client)
             file_content = await file_download.readall()
             return BytesIO(file_content)
+
+
+async def __get_years_for_dmi_weather_type_and_coords(path: str, filesystem_client):
+    filepaths = await __get_filepaths(path, filesystem_client)
+    result = []
+    for filepath in filepaths:
+        year = filepath.rsplit('/', maxsplit=1)[-1][0:4]
+        result.append(int(year))
+    return list(set(result))    # Return unique entries only
 
 
 async def __get_coordinates_for_dmi_weather_type(path: str, filesystem_client):
