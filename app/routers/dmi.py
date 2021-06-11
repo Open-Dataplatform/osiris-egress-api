@@ -10,7 +10,7 @@ from fastapi.security.api_key import APIKeyHeader
 from osiris.core.configuration import Configuration
 
 from ..dependencies import __get_filesystem_client, __check_directory_exist, __get_filepaths, __download_file
-from ..metrics import TracerClass
+from ..metrics import Metric
 from ..schemas.dmi import EDMIWeatherType, CoordinatesModel
 
 configuration = Configuration(__file__)
@@ -21,10 +21,9 @@ access_token_header = APIKeyHeader(name='Authorization', auto_error=True)
 
 router = APIRouter(tags=['dmi'])
 
-tracer = TracerClass().get_tracer()
-
 
 @router.get('/dmi/{year}/{month}/{day}/{hour}/{weather_type}', response_class=StreamingResponse)
+@Metric.histogram
 async def download_dmi_datetime_type(year: int,  # pylint: disable=too-many-arguments
                                      month: int,
                                      day: int,
@@ -45,6 +44,7 @@ async def download_dmi_datetime_type(year: int,  # pylint: disable=too-many-argu
 
 
 @router.get('/dmi/{weather_type}/', response_model=List[CoordinatesModel])
+@Metric.histogram
 async def get_dmi_coords_for_weather_type(weather_type: EDMIWeatherType,
                                           token: str = Security(access_token_header)) -> List[Dict[str, Any]]:
     """
@@ -62,6 +62,7 @@ async def get_dmi_coords_for_weather_type(weather_type: EDMIWeatherType,
 
 
 @router.get('/dmi/{weather_type}/{lat}/{lon}/', response_class=JSONResponse)
+@Metric.histogram
 async def get_dmi_years_for_weather_type_and_coords(weather_type: EDMIWeatherType, lat: float, lon: float,
                                                     token: str = Security(access_token_header)) -> JSONResponse:
     """
@@ -78,6 +79,7 @@ async def get_dmi_years_for_weather_type_and_coords(weather_type: EDMIWeatherTyp
 
 
 @router.get('/dmi/{weather_type}/{lat}/{lon}/{year}', response_class=StreamingResponse)
+@Metric.histogram
 async def download_dmi_weather_type_coords(weather_type: EDMIWeatherType, lat: float, lon: float, year: int,
                                            token: str = Security(access_token_header)) -> StreamingResponse:
     """
