@@ -5,13 +5,14 @@ from http import HTTPStatus
 from io import BytesIO
 from typing import Optional
 
+from azure.core.exceptions import ResourceNotFoundError
 from azure.storage.filedatalake.aio import FileSystemClient
 from fastapi import APIRouter, HTTPException, Security
 from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.security.api_key import APIKeyHeader
 from osiris.core.configuration import Configuration
 
-from ..dependencies import (__download_file, __check_directory_exist, __get_filesystem_client, __download_json_file)
+from ..dependencies import (__download_file, __check_directory_exist, __get_filesystem_client, __download_json_file, __get_file_client)
 from ..metrics import TracerClass, Metric
 
 configuration = Configuration(__file__)
@@ -146,3 +147,34 @@ async def __get_file_stream_for_ikontrol_file(file_path: str, filesystem_client:
     stream = BytesIO(file_content)
 
     return stream
+
+
+@router.get("/download", response_class=StreamingResponse)
+@Metric.histogram
+async def download_file(
+    blob_name: str, token: str = Security(access_token_header)
+) -> StreamingResponse:
+    """
+    Download any blob of any format.
+    """
+    try:
+        dataset_id, file_path = blob_name.split("/", maxsplit=1)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Wrong blob name format. Expects: <dataset_id>/<file_path>")
+
+    file_system = await __get_filesystem_client(token)
+
+    directory_client = file_system.get_directory_client(dataset_id)
+
+    try:
+        file_client = await __get_file_client(directory_client, file_path)
+        if file_client is None:
+            raise ResourceNotFoundError()
+        byte_stream = BytesIO()
+        storage_stream = await file_client.download_file()
+        await storage_stream.readinto(byte_stream)
+        byte_stream.seek(0)
+    except ResourceNotFoundError:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    return StreamingResponse(byte_stream, media_type="application/octet-stream")

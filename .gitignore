@@ -135,3 +135,6 @@ server.py
 # configuration
 conf.ini
 **/myvalues.yaml
+
+.vscode
+**/my_cache.bin
