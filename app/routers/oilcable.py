@@ -36,6 +36,9 @@ async def get_leak_cable_id(
     to_date: Optional[str] = None,
     token: str = Security(access_token_header),
 ):
+    """
+    Download probalilities of leak on a single oilcables
+    """
     guid = config["Oilcable"]["leakprop_guid"]
     blob_name = f"{guid}/egress/{cable_id}.parquet"
 
@@ -54,6 +57,9 @@ async def get_leak_cable_id(
     to_date: Optional[str] = None,
     token: str = Security(access_token_header),
 ):
+    """
+    Download probalilities of leak on all oilcables
+    """
     guid = config["Oilcable"]["leakprop_guid"]
     blob_name_prefix = f"{guid}/egress/"
 
@@ -77,6 +83,9 @@ async def get_leak_cable_id(
     to_date: Optional[str] = None,
     token: str = Security(access_token_header),
 ):
+    """
+    Download daily mean value readings for oilcables
+    """
     guid = config["Oilcable"]["pt24h_guid"]
     blob_name_prefix = f"{guid}"
 
