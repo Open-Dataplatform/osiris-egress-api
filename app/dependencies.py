@@ -7,6 +7,7 @@ import os
 from datetime import datetime
 from http import HTTPStatus
 from typing import Optional, Union, List
+from io import BytesIO
 
 import pandas as pd
 from azure.core.exceptions import HttpResponseError, ResourceNotFoundError
@@ -252,3 +253,38 @@ def __parse_date_arguments(from_date, to_date):
 #         message = f'({type(error).__name__}) Problems downloading setting.json: {error}'
 #         logger.error(message)
 #         raise HTTPException(status_code=error.status_code, detail=message) from error
+
+
+async def __download_blob_to_stream(blob_name, token):
+    """Returns a BytesIO of the blob
+
+    Args:
+        blob_name (str): Name of the blob including dataset_guid
+        token (str): Auth token
+
+    Raises:
+        HTTPException: If file isnt found
+
+    Returns:
+        [BytesIO]: BytesIO containing the blob
+    """
+    try:
+        dataset_id, file_path = blob_name.split("/", maxsplit=1)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Wrong blob name format. Expects: <dataset_id>/<file_path>")
+
+    async with await __get_filesystem_client(token) as filesystem_client:
+        directory_client = filesystem_client.get_directory_client(dataset_id)
+
+        try:
+            file_client = await __get_file_client(directory_client, file_path)
+            if file_client is None:
+                raise ResourceNotFoundError()
+            byte_stream = BytesIO()
+            storage_stream = await file_client.download_file()
+            await storage_stream.readinto(byte_stream)
+            byte_stream.seek(0)
+        except ResourceNotFoundError:
+            raise HTTPException(status_code=404, detail="File not found")
+
+    return byte_stream
