@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from osiris.core.configuration import Configuration
 from starlette_exporter import PrometheusMiddleware, handle_metrics
 
-from .routers import downloads, grafana_json, dmi
+from .routers import downloads, grafana_json, dmi, oilcable
 
 configuration = Configuration(__file__)
 config = configuration.get_config()
@@ -39,6 +39,7 @@ app.add_route('/metrics', handle_metrics)
 app.include_router(grafana_json.router)
 app.include_router(downloads.router)
 app.include_router(dmi.router)
+app.include_router(oilcable.router)
 
 
 @app.get('/', status_code=HTTPStatus.OK)
