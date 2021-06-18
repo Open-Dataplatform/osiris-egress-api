@@ -106,22 +106,11 @@ async def __get_file_stream_for_dmi_type_coords_file(path: str, year: int, files
     directory_client = filesystem_client.get_directory_client(guid)
     await __check_directory_exist(directory_client)
 
-    # 2010-002b5354-66e3-423e-975d-0d65f2e3d1df.parquet
     filepath = f'{path}/{year}.parquet'
 
     file_download = await __download_file(filepath, filesystem_client)
     file_content = await file_download.readall()
     return BytesIO(file_content)
-
-
-    paths = await __get_filepaths(path, filesystem_client)
-    for filepath in paths:
-        _, filename = filepath.rsplit('/', maxsplit=1)
-        file_year = filename[0:4]
-        if str(year) == file_year:
-            file_download = await __download_file(filepath, filesystem_client)
-            file_content = await file_download.readall()
-            return BytesIO(file_content)
 
 
 async def __get_file_stream_for_dmi_dt_type_file(path: str, weather_type: EDMIWeatherType, filesystem_client):
