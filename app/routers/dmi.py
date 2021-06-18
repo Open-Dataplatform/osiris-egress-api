@@ -4,7 +4,8 @@ Implements endpoints for DMI Weather data.
 from io import BytesIO
 from typing import List, Dict, Any
 
-from fastapi import APIRouter, Security
+from azure.core.exceptions import ResourceNotFoundError
+from fastapi import APIRouter, Security, HTTPException
 from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.security.api_key import APIKeyHeader
 from osiris.core.configuration import Configuration
@@ -38,8 +39,10 @@ async def download_dmi_datetime_type(year: int,  # pylint: disable=too-many-argu
         datetime_type_guid = config['DMI']['datetime_type_guid']
         path = f'{datetime_type_guid}/year={year}/month={month:02d}/day={day:02d}/hour={hour:02d}/'
 
-        stream = await __get_file_stream_for_dmi_dt_type_file(path, weather_type, filesystem_client)
-
+        try:
+            stream = await __get_file_stream_for_dmi_dt_type_file(path, weather_type, filesystem_client)
+        except ResourceNotFoundError:
+            raise HTTPException(status_code=404, detail="File not found")
         return StreamingResponse(stream, media_type='application/octet-stream')
 
 
@@ -115,13 +118,11 @@ async def __get_file_stream_for_dmi_dt_type_file(path: str, weather_type: EDMIWe
     directory_client = filesystem_client.get_directory_client(guid)
     await __check_directory_exist(directory_client)
 
-    paths = await __get_filepaths(path, filesystem_client)
-    for filepath in paths:
-        _, filename = filepath.rsplit('/', maxsplit=1)
-        if weather_type.value in filename:
-            file_download = await __download_file(filepath, filesystem_client)
-            file_content = await file_download.readall()
-            return BytesIO(file_content)
+    filepath = f'{path}{weather_type.value}.parquet'
+
+    file_download = await __download_file(filepath, filesystem_client)
+    file_content = await file_download.readall()
+    return BytesIO(file_content)
 
 
 async def __get_years_for_dmi_weather_type_and_coords(path: str, filesystem_client):
