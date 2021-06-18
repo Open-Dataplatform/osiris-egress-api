@@ -93,7 +93,10 @@ async def download_dmi_weather_type_coords(weather_type: EDMIWeatherType, lat: f
         guid = config['DMI']['type_coordinate_guid']
         path = f'{guid}/weather_type={weather_type.value}/lat={lat:.2f}/lon={lon:.2f}'
 
-        stream = await __get_file_stream_for_dmi_type_coords_file(path, year, filesystem_client)
+        try:
+            stream = await __get_file_stream_for_dmi_type_coords_file(path, year, filesystem_client)
+        except ResourceNotFoundError:
+            raise HTTPException(status_code=404, detail="File not found")
 
         return StreamingResponse(stream, media_type='application/octet-stream')
 
@@ -102,6 +105,14 @@ async def __get_file_stream_for_dmi_type_coords_file(path: str, year: int, files
     guid = config['DMI']['type_coordinate_guid']
     directory_client = filesystem_client.get_directory_client(guid)
     await __check_directory_exist(directory_client)
+
+    # 2010-002b5354-66e3-423e-975d-0d65f2e3d1df.parquet
+    filepath = f'{path}/{year}.parquet'
+
+    file_download = await __download_file(filepath, filesystem_client)
+    file_content = await file_download.readall()
+    return BytesIO(file_content)
+
 
     paths = await __get_filepaths(path, filesystem_client)
     for filepath in paths:
