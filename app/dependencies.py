@@ -6,7 +6,7 @@ import json
 import os
 from datetime import datetime
 from http import HTTPStatus
-from typing import Optional, Union, List
+from typing import Optional, Union, List, AsyncIterable
 
 import pandas as pd
 from azure.core.exceptions import HttpResponseError, ResourceNotFoundError
@@ -182,10 +182,18 @@ async def __check_directory_exist(directory_client: DataLakeDirectoryClient):
         raise HTTPException(status_code=error.status_code, detail=message) from error
 
 
-async def __get_filepaths(path, filesystem_client) -> List[str]:
+# async def __get_filepaths(path, filesystem_client) -> List[str]:
+#     """ Returns a list of paths below `path` that are not directories. """
+#     paths = filesystem_client.get_paths(path=path)
+#     return [path.name async for path in paths if not path.is_directory]
+
+
+async def __get_filepaths(path, filesystem_client) -> AsyncIterable[str]:
     """ Returns a list of paths below `path` that are not directories. """
     paths = filesystem_client.get_paths(path=path)
-    return [path.name async for path in paths if not path.is_directory]
+    async for path in paths:
+        if not path.is_directory:
+            yield path.name
 
 
 def __get_path_for_arbitrary_file(file_date: datetime, guid: str, filesystem_client: FileSystemClient) -> str:

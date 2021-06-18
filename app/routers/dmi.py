@@ -100,8 +100,8 @@ async def __get_file_stream_for_dmi_type_coords_file(path: str, year: int, files
     directory_client = filesystem_client.get_directory_client(guid)
     await __check_directory_exist(directory_client)
 
-    paths = await __get_filepaths(path, filesystem_client)
-    for filepath in paths:
+    paths = __get_filepaths(path, filesystem_client)
+    async for filepath in paths:
         _, filename = filepath.rsplit('/', maxsplit=1)
         file_year = filename[0:4]
         if str(year) == file_year:
@@ -115,8 +115,8 @@ async def __get_file_stream_for_dmi_dt_type_file(path: str, weather_type: EDMIWe
     directory_client = filesystem_client.get_directory_client(guid)
     await __check_directory_exist(directory_client)
 
-    paths = await __get_filepaths(path, filesystem_client)
-    for filepath in paths:
+    paths = __get_filepaths(path, filesystem_client)
+    async for filepath in paths:
         _, filename = filepath.rsplit('/', maxsplit=1)
         if weather_type.value in filename:
             file_download = await __download_file(filepath, filesystem_client)
@@ -125,9 +125,9 @@ async def __get_file_stream_for_dmi_dt_type_file(path: str, weather_type: EDMIWe
 
 
 async def __get_years_for_dmi_weather_type_and_coords(path: str, filesystem_client):
-    filepaths = await __get_filepaths(path, filesystem_client)
+    filepaths = __get_filepaths(path, filesystem_client)
     result = []
-    for filepath in filepaths:
+    async for filepath in filepaths:
         year = filepath.rsplit('/', maxsplit=1)[-1][0:4]
         result.append(int(year))
     return list(set(result))    # Return unique entries only
