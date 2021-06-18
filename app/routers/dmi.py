@@ -2,9 +2,10 @@
 Implements endpoints for DMI Weather data.
 """
 from io import BytesIO
-from typing import List, Dict, Any
+from typing import List
 
 from fastapi import APIRouter, Security
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.security.api_key import APIKeyHeader
 from osiris.core.configuration import Configuration
@@ -46,7 +47,7 @@ async def download_dmi_datetime_type(year: int,  # pylint: disable=too-many-argu
 @router.get('/dmi/{weather_type}/', response_model=List[CoordinatesModel])
 @Metric.histogram
 async def get_dmi_coords_for_weather_type(weather_type: EDMIWeatherType,
-                                          token: str = Security(access_token_header)) -> List[Dict[str, Any]]:
+                                          token: str = Security(access_token_header)) -> JSONResponse:
     """
     Returns available coordinates for the given weather_type.
     """
@@ -58,7 +59,7 @@ async def get_dmi_coords_for_weather_type(weather_type: EDMIWeatherType,
 
         result = await __get_coordinates_for_dmi_weather_type(path, filesystem_client)
 
-        return result
+        return JSONResponse(jsonable_encoder(result))
 
 
 @router.get('/dmi/{weather_type}/{lat}/{lon}/', response_class=JSONResponse)
@@ -130,7 +131,7 @@ async def __get_years_for_dmi_weather_type_and_coords(path: str, filesystem_clie
     async for filepath in filepaths:
         year = filepath.rsplit('/', maxsplit=1)[-1][0:4]
         result.append(int(year))
-    return list(set(result))    # Return unique entries only
+    return list(set(result))  # Return unique entries only
 
 
 async def __get_coordinates_for_dmi_weather_type(path: str, filesystem_client):

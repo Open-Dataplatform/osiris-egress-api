@@ -156,8 +156,9 @@ def test_get_dmi_coords_for_weather_type(url,
     mock_get_coordinates_for_dmi_weather_type.return_value = [model_data]
     response = client.get(
         f'/dmi/{url}',
-            headers={'Authorization': 'secret'}
-        )
+        headers={'Authorization': 'secret'}
+    )
+    print(response)
     assert response.status_code == 200
     assert mock_get_filesystem_client.call_count == 1
 

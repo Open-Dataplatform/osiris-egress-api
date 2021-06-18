@@ -5,14 +5,14 @@ from http import HTTPStatus
 from io import BytesIO
 from typing import Optional
 
-from azure.core.exceptions import ResourceNotFoundError
 from azure.storage.filedatalake.aio import FileSystemClient
 from fastapi import APIRouter, HTTPException, Security
 from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.security.api_key import APIKeyHeader
 from osiris.core.configuration import Configuration
 
-from ..dependencies import (__download_file, __check_directory_exist, __get_filesystem_client, __download_json_file, __get_file_client, __download_blob_to_stream)
+from ..dependencies import (__download_file, __check_directory_exist, __get_filesystem_client, __download_json_file,
+                            __download_blob_to_stream)
 from ..metrics import TracerClass, Metric
 
 configuration = Configuration(__file__)
