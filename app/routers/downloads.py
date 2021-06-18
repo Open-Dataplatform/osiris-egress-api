@@ -12,7 +12,7 @@ from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.security.api_key import APIKeyHeader
 from osiris.core.configuration import Configuration
 
-from ..dependencies import (__download_file, __check_directory_exist, __get_filesystem_client, __download_json_file, __get_file_client)
+from ..dependencies import (__download_file, __check_directory_exist, __get_filesystem_client, __download_json_file, __get_file_client, __download_blob_to_stream)
 from ..metrics import TracerClass, Metric
 
 configuration = Configuration(__file__)
@@ -157,24 +157,6 @@ async def download_file(
     """
     Download any blob of any format.
     """
-    try:
-        dataset_id, file_path = blob_name.split("/", maxsplit=1)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Wrong blob name format. Expects: <dataset_id>/<file_path>")
-
-    file_system = await __get_filesystem_client(token)
-
-    directory_client = file_system.get_directory_client(dataset_id)
-
-    try:
-        file_client = await __get_file_client(directory_client, file_path)
-        if file_client is None:
-            raise ResourceNotFoundError()
-        byte_stream = BytesIO()
-        storage_stream = await file_client.download_file()
-        await storage_stream.readinto(byte_stream)
-        byte_stream.seek(0)
-    except ResourceNotFoundError:
-        raise HTTPException(status_code=404, detail="File not found")
+    byte_stream = await __download_blob_to_stream(blob_name, token)
 
     return StreamingResponse(byte_stream, media_type="application/octet-stream")
