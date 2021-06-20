@@ -19,7 +19,7 @@ from jaeger_client import Span
 from osiris.azure_client_authorization import AzureCredentialAIO
 from osiris.core.configuration import Configuration
 from osiris.core.enums import TimeResolution
-from osiris.core.io import get_file_path_with_respect_to_time_resolution
+from osiris.core.io import get_file_path_with_respect_to_time_resolution, parse_date_str
 from pandas import DatetimeIndex
 
 from app.metrics import TracerClass
@@ -140,7 +140,13 @@ async def __download_json_file(guid: str,   # pylint: disable=too-many-locals
                                token: str,
                                from_date: Optional[str] = None,
                                to_date: Optional[str] = None) -> JSONResponse:
-    from_date_obj, to_date_obj, time_resolution_enum = __parse_date_arguments(from_date, to_date)
+
+    try:
+        from_date_obj, to_date_obj, time_resolution_enum = __parse_date_arguments(from_date, to_date)
+    except ValueError as error:
+        message = f'({type(error).__name__}) Wrong string format for date(s): {error}'
+        logger.error(message)
+        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=message) from error
 
     with tracer.start_span('download_json_file') as span:
         span.set_tag('guid', guid)
@@ -213,41 +219,19 @@ def __get_path_for_arbitrary_file(file_date: datetime, guid: str, filesystem_cli
     return filename
 
 
-def __parse_date_str(date_str):
-    try:
-        if len(date_str) == 4:
-            return pd.to_datetime(date_str, format='%Y'), TimeResolution.YEAR
-        if len(date_str) == 7:
-            return pd.to_datetime(date_str, format='%Y-%m'), TimeResolution.MONTH
-        if len(date_str) == 10:
-            return pd.to_datetime(date_str, format='%Y-%m-%d'), TimeResolution.DAY
-        if len(date_str) == 13:
-            return pd.to_datetime(date_str, format='%Y-%m-%dT%H'), TimeResolution.HOUR
-        if len(date_str) == 16:
-            return pd.to_datetime(date_str, format='%Y-%m-%dT%H:%M'), TimeResolution.MINUTE
-
-        message = '(ValueError) Wrong string format for date(s):'
-        logger.error(message)
-        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=message)
-    except ValueError as error:
-        message = f'({type(error).__name__}) Wrong string format for date(s): {error}'
-        logger.error(message)
-        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=message) from error
-
-
 def __parse_date_arguments(from_date, to_date):
     if from_date is None and to_date is None:
         return datetime(1970, 1, 1), None, TimeResolution.NONE
     if to_date is None:
-        from_date_obj, time_resolution = __parse_date_str(from_date)
+        from_date_obj, time_resolution = parse_date_str(from_date)
         return from_date_obj, None, time_resolution
     if len(from_date) != len(to_date):
         message = 'Malformed request syntax: len(from_date) != len(to_date)'
         logger.error(message)
         raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=message)
 
-    from_date_obj, time_resolution = __parse_date_str(from_date)
-    to_date_obj, _ = __parse_date_str(to_date)
+    from_date_obj, time_resolution = parse_date_str(from_date)
+    to_date_obj, _ = parse_date_str(to_date)
     return from_date_obj, to_date_obj, time_resolution
 
 
