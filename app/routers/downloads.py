@@ -171,7 +171,8 @@ async def download_neptun_data(horizon: str,  # pylint: disable=too-many-locals
 
     The horizon parameter must be set to Yearly, Monthly or Daily depending on what dataset you want data from.
 
-    The tags parameter is a list of tags which can be used to filter the data based on the Tag column.
+    The tags parameter is a list of tags (comma-separated string) which can be used to filter the data based on
+    the Tag column.
     """
     logger.debug('download jao data requested')
     if horizon == 'Monthly':
