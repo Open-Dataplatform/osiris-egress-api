@@ -189,12 +189,6 @@ async def __check_directory_exist(directory_client: DataLakeDirectoryClient):
         raise HTTPException(status_code=error.status_code, detail=message) from error
 
 
-# async def __get_filepaths(path, filesystem_client) -> List[str]:
-#     """ Returns a list of paths below `path` that are not directories. """
-#     paths = filesystem_client.get_paths(path=path)
-#     return [path.name async for path in paths if not path.is_directory]
-
-
 async def __get_filepaths(path, filesystem_client) -> AsyncIterable[str]:
     """ Returns a list of paths below `path` that are not directories. """
     paths = filesystem_client.get_paths(path=path)
@@ -262,8 +256,9 @@ async def __download_blob_to_stream(blob_name, token):
     """
     try:
         dataset_id, file_path = blob_name.split("/", maxsplit=1)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Wrong blob name format. Expects: <dataset_id>/<file_path>")
+    except ValueError as error:
+        raise HTTPException(status_code=400,
+                            detail="Wrong blob name format. Expects: <dataset_id>/<file_path>") from error
 
     async with await __get_filesystem_client(token) as filesystem_client:
         directory_client = filesystem_client.get_directory_client(dataset_id)
@@ -276,7 +271,18 @@ async def __download_blob_to_stream(blob_name, token):
             storage_stream = await file_client.download_file()
             await storage_stream.readinto(byte_stream)
             byte_stream.seek(0)
-        except ResourceNotFoundError:
-            raise HTTPException(status_code=404, detail="File not found")
+        except ResourceNotFoundError as error:
+            raise HTTPException(status_code=404, detail="File not found") from error
 
     return byte_stream
+
+
+async def __download_streams(blob_name_prefix, token):
+    filesystem_client = await __get_filesystem_client(token)
+
+    blob_names = await __get_filepaths(blob_name_prefix, filesystem_client)
+
+    tasks = [__download_blob_to_stream(blob_name, token) for blob_name in blob_names]
+    byte_streams = await asyncio.gather(*tasks)
+
+    return byte_streams

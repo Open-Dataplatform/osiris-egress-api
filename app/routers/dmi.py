@@ -4,9 +4,9 @@ Implements endpoints for DMI Weather data.
 from io import BytesIO
 from typing import List
 
-from fastapi.encoders import jsonable_encoder
 from azure.core.exceptions import ResourceNotFoundError
 from fastapi import APIRouter, Security, HTTPException
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.security.api_key import APIKeyHeader
 from osiris.core.configuration import Configuration
@@ -42,8 +42,8 @@ async def download_dmi_datetime_type(year: int,  # pylint: disable=too-many-argu
 
         try:
             stream = await __get_file_stream_for_dmi_dt_type_file(path, weather_type, filesystem_client)
-        except ResourceNotFoundError:
-            raise HTTPException(status_code=404, detail="File not found")
+        except ResourceNotFoundError as error:
+            raise HTTPException(status_code=404, detail="File not found") from error
         return StreamingResponse(stream, media_type='application/octet-stream')
 
 
@@ -96,8 +96,8 @@ async def download_dmi_weather_type_coords(weather_type: EDMIWeatherType, lat: f
 
         try:
             stream = await __get_file_stream_for_dmi_type_coords_file(path, year, filesystem_client)
-        except ResourceNotFoundError:
-            raise HTTPException(status_code=404, detail="File not found")
+        except ResourceNotFoundError as error:
+            raise HTTPException(status_code=404, detail="File not found") from error
 
         return StreamingResponse(stream, media_type='application/octet-stream')
 

@@ -1,21 +1,18 @@
 """
 Implements endpoints for delfin oilcable data.
 """
-import asyncio
 import functools
 from typing import Optional
 
+import pandas as pd
 from fastapi import APIRouter, Security
 from fastapi.responses import JSONResponse
 from fastapi.security.api_key import APIKeyHeader
 from osiris.core.configuration import Configuration
-import pandas as pd
 
 from ..dependencies import (
-    __get_filesystem_client,
-    __get_filepaths,
     __download_blob_to_stream,
-    __parse_date_arguments,
+    __parse_date_arguments, __download_streams,
 )
 from ..metrics import Metric
 
@@ -31,10 +28,10 @@ router = APIRouter(tags=["oilcable"])
 @router.get("/oilcable/leak/{cable_id}", response_class=JSONResponse)
 @Metric.histogram
 async def get_leak_cable_id(
-    cable_id: str,
-    from_date: Optional[str] = None,
-    to_date: Optional[str] = None,
-    token: str = Security(access_token_header),
+        cable_id: str,
+        from_date: Optional[str] = None,
+        to_date: Optional[str] = None,
+        token: str = Security(access_token_header),
 ):
     """
     Download probalilities of leak on a single oilcables
@@ -43,19 +40,19 @@ async def get_leak_cable_id(
     blob_name = f"{guid}/egress/{cable_id}.parquet"
 
     byte_stream = await __download_blob_to_stream(blob_name, token)
-    df = pd.read_parquet(byte_stream)
+    dataframe = pd.read_parquet(byte_stream)
 
-    json_data = filter_datetime(df, from_date, to_date)
+    json_data = __filter_datetime(dataframe, from_date, to_date)
 
     return JSONResponse(json_data)
 
 
 @router.get("/oilcable/leak", response_class=JSONResponse)
 @Metric.histogram
-async def get_leak_cable_id(
-    from_date: Optional[str] = None,
-    to_date: Optional[str] = None,
-    token: str = Security(access_token_header),
+async def get_leak_cable(
+        from_date: Optional[str] = None,
+        to_date: Optional[str] = None,
+        token: str = Security(access_token_header),
 ):
     """
     Download probalilities of leak on all oilcables
@@ -63,25 +60,25 @@ async def get_leak_cable_id(
     guid = config["Oilcable"]["leakprop_guid"]
     blob_name_prefix = f"{guid}/egress/"
 
-    byte_streams = await download_streams(blob_name_prefix, token)
+    byte_streams = await __download_streams(blob_name_prefix, token)
 
     dfs = [pd.read_parquet(byte_stream) for byte_stream in byte_streams]
-    df = pd.concat(dfs)
+    dataframe = pd.concat(dfs)
 
-    df = filter_datetime(df, from_date, to_date)
-    df["date"] = df["date"].dt.strftime("%Y-%m-%d")
+    dataframe = __filter_datetime(dataframe, from_date, to_date)
+    dataframe["date"] = dataframe["date"].dt.strftime("%Y-%m-%d")
 
-    json_data = df.to_json(orient="records")
+    json_data = dataframe.to_json(orient="records")
 
     return JSONResponse(json_data)
 
 
 @router.get("/oilcable/daily", response_class=JSONResponse)
 @Metric.histogram
-async def get_leak_cable_id(
-    from_date: Optional[str] = None,
-    to_date: Optional[str] = None,
-    token: str = Security(access_token_header),
+async def get_leak_cable_daily(
+        from_date: Optional[str] = None,
+        to_date: Optional[str] = None,
+        token: str = Security(access_token_header),
 ):
     """
     Download daily mean value readings for oilcables
@@ -89,17 +86,17 @@ async def get_leak_cable_id(
     guid = config["Oilcable"]["pt24h_guid"]
     blob_name_prefix = f"{guid}"
 
-    byte_streams = await download_streams(blob_name_prefix, token)
+    byte_streams = await __download_streams(blob_name_prefix, token)
 
     dfs = [pd.read_json(byte_stream) for byte_stream in byte_streams]
-    df = pd.concat(dfs)
+    dataframe = pd.concat(dfs)
 
-    df = filter_datetime(df, from_date, to_date, date_column="timestamp")
-    df["timestamp"] = df["timestamp"].dt.strftime("%Y-%m-%d")
+    dataframe = __filter_datetime(dataframe, from_date, to_date, date_column="timestamp")
+    dataframe["timestamp"] = dataframe["timestamp"].dt.strftime("%Y-%m-%d")
 
     groups = []
 
-    for reading_type, group in df.groupby(["reading_type"]):
+    for reading_type, group in dataframe.groupby(["reading_type"]):
         cnames = {
             "mean": f"{reading_type}_mean",
             "std": f"{reading_type}_std",
@@ -114,30 +111,19 @@ async def get_leak_cable_id(
         group.rename(columns=cnames, inplace=True)
         groups.append(group)
 
-    df = functools.reduce(lambda a, b: pd.merge(a, b, on=["cable_id", "date"]), groups)
+    dataframe = functools.reduce(lambda a, b: pd.merge(a, b, on=["cable_id", "date"]), groups)
 
-    json_data = df.to_json(orient="records")
+    json_data = dataframe.to_json(orient="records")
 
     return JSONResponse(json_data)
 
 
-def filter_datetime(df, from_date, to_date, date_column="date"):
+def __filter_datetime(dataframe, from_date, to_date, date_column="date"):
     from_date_obj, to_date_obj, _ = __parse_date_arguments(from_date, to_date)
 
     if to_date_obj is None:
         to_date_obj = pd.Timestamp.max
 
-    df = df[(from_date_obj <= df[date_column]) & (df[date_column] <= to_date_obj)]
+    dataframe = dataframe[(from_date_obj <= dataframe[date_column]) & (dataframe[date_column] <= to_date_obj)]
 
-    return df
-
-
-async def download_streams(blob_name_prefix, token):
-    filesystem_client = await __get_filesystem_client(token)
-
-    blob_names = await __get_filepaths(blob_name_prefix, filesystem_client)
-
-    tasks = [__download_blob_to_stream(blob_name, token) for blob_name in blob_names]
-    byte_streams = await asyncio.gather(*tasks)
-
-    return byte_streams
+    return dataframe
