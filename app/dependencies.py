@@ -14,7 +14,6 @@ from azure.core.exceptions import HttpResponseError, ResourceNotFoundError
 from azure.storage.filedatalake.aio import DataLakeDirectoryClient, DataLakeFileClient, StorageStreamDownloader, \
     FileSystemClient
 from fastapi import HTTPException
-from fastapi.responses import JSONResponse
 from jaeger_client import Span
 from osiris.azure_client_authorization import AzureCredentialAIO
 from osiris.core.configuration import Configuration
@@ -114,10 +113,13 @@ async def __download_file(filename: str, directory_client: DataLakeDirectoryClie
         raise HTTPException(status_code=error.status_code, detail=message) from error
 
 
-async def __download_files(timeslot_chunk: List[datetime],
-                           time_resolution: TimeResolution,
-                           directory_client: DataLakeDirectoryClient,
-                           retrieve_data_span: Span) -> List:
+# pylint: disable=too-many-arguments
+async def __download_json_files(timeslot_chunk: List[datetime],
+                                time_resolution: TimeResolution,
+                                directory_client: DataLakeDirectoryClient,
+                                retrieve_data_span: Span,
+                                filter_key: Optional[str] = None,
+                                filters: Optional[List] = None) -> List:
     async def __download(download_date: datetime):
         data = await __download_data(download_date, time_resolution, directory_client, retrieve_data_span)
 
@@ -125,59 +127,18 @@ async def __download_files(timeslot_chunk: List[datetime],
             return None
 
         try:
-            json_data = json.loads(data)
+            records = json.loads(data)
         except ValueError as error:
             message = f'({type(error).__name__}) File is not JSON formatted: {error}'
             logger.error(message)
             raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR, detail=message) from error
 
-        return json_data
+        if filters and filter_key:
+            records = [record for record in records if record[filter_key] in filters]
+
+        return records
 
     return await asyncio.gather(*[__download(timeslot) for timeslot in timeslot_chunk])
-
-
-async def __download_json_file(guid: str,   # pylint: disable=too-many-locals
-                               token: str,
-                               from_date: Optional[str] = None,
-                               to_date: Optional[str] = None) -> JSONResponse:
-
-    try:
-        from_date_obj, to_date_obj, time_resolution_enum = __parse_date_arguments(from_date, to_date)
-    except ValueError as error:
-        message = f'({type(error).__name__}) Wrong string format for date(s): {error}'
-        logger.error(message)
-        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=message) from error
-
-    with tracer.start_span('download_json_file') as span:
-        span.set_tag('guid', guid)
-        async with await __get_filesystem_client(token) as filesystem_client:
-            with tracer.start_span('get_directory_client', child_of=span):
-                directory_client = filesystem_client.get_directory_client(guid)
-
-            with tracer.start_span('check_directory_exists', child_of=span):
-                await __check_directory_exist(directory_client)
-
-            with tracer.start_span('retrieve_data', child_of=span) as retrieve_data_span:
-                if to_date_obj:
-                    download_dates = __get_all_dates_to_download(from_date_obj, to_date_obj, time_resolution_enum)
-                    download_dates = [item.to_pydatetime() for item in download_dates.tolist()]
-                else:
-                    download_dates = [from_date_obj]
-
-                concat_response = []
-                for chunk in __split_into_chunks(download_dates, 200):
-                    responses = await __download_files(chunk, time_resolution_enum,
-                                                       directory_client, retrieve_data_span)
-
-                    for response in responses:
-                        if response:
-                            concat_response += response
-
-        status_code = 200
-        if not concat_response:
-            status_code = HTTPStatus.NO_CONTENT
-
-        return JSONResponse(concat_response, status_code=status_code)
 
 
 async def __check_directory_exist(directory_client: DataLakeDirectoryClient):
