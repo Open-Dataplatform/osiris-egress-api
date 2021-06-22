@@ -3,12 +3,11 @@ from unittest.mock import patch, AsyncMock
 
 import pytest
 from fastapi.testclient import TestClient
-
 from app.schemas.dmi import CoordinatesModel
 
 
 def get_app():
-    with patch('app.dependencies.Configuration') as _:
+    with patch('osiris.core.configuration.Configuration') as _:
         from app.main import app
 
         return TestClient(app)
@@ -142,8 +141,8 @@ def test_download_dmi_weather_type_coords_fails_type_validation(url):
 
 
 @pytest.mark.parametrize('url', [
-    'radiation_diffus',
-    'temperatur_2m',
+    'radiation_diffus/',
+    'temperatur_2m/',
 ])
 def test_get_dmi_coords_for_weather_type(url,
                                          mock_get_coordinates_for_dmi_weather_type: AsyncMock,
@@ -164,8 +163,8 @@ def test_get_dmi_coords_for_weather_type(url,
 
 
 @pytest.mark.parametrize('url', [
-    '123',
-    'non_existant',
+    '123/',
+    'non_existant/',
 ])
 def test_get_dmi_coords_for_weather_type_fails_type_validation(url):
     """

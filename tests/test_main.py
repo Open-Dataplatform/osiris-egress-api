@@ -4,7 +4,7 @@ from fastapi.testclient import TestClient
 
 
 def get_app():
-    with patch('app.dependencies.Configuration') as _:
+    with patch('osiris.core.configuration.Configuration') as _:
         from app.main import app
 
         return TestClient(app)
