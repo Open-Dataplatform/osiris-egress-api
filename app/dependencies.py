@@ -15,7 +15,7 @@ from azure.storage.filedatalake.aio import DataLakeDirectoryClient, DataLakeFile
     FileSystemClient
 from fastapi import HTTPException
 from jaeger_client import Span
-from osiris.azure_client_authorization import AzureCredentialAIO
+from osiris.core.azure_client_authorization import AzureCredentialAIO
 from osiris.core.configuration import Configuration
 from osiris.core.enums import TimeResolution
 from osiris.core.io import get_file_path_with_respect_to_time_resolution, parse_date_str
