@@ -169,18 +169,22 @@ async def download_neptun_data(horizon: str,  # pylint: disable=too-many-locals
     If from_date is left out, current UTC time is used.
     If to_date is left out, only one data point is retrieved.
 
-    The horizon parameter must be set to Yearly, Monthly or Daily depending on what dataset you want data from.
+    The horizon parameter must be set to Daily, Hourly or Minutely depending on what dataset you want data from:
+
+    If Horizon is set to Daily the date(s) must be of the form {year}-{month}
+    If Horizon is set to Hourly the date(s) must be of the form {year}-{month}-{day}
+    If Horizon is set to Minutely the date(s) must be of the form {year}-{month}-{day}T{hour}
 
     The tags parameter is a list of tags (comma-separated string) which can be used to filter the data based on
     the Tag column.
     """
     logger.debug('download jao data requested')
-    if horizon == 'Monthly':
-        guid = config['Neptun']['monthly_guid']
-    elif horizon == 'Daily':
+    if horizon.lower() == 'daily':
         guid = config['Neptun']['daily_guid']
-    elif horizon == 'Hourly':
+    elif horizon.lower() == 'hourly':
         guid = config['Neptun']['hourly_guid']
+    elif horizon.lower() == 'minutely':
+        guid = config['Neptun']['minutely_guid']
     else:
         message = '(ValueError) The horizon parameter must be Monthly, Daily or Hourly.'
         logger.error(message)
