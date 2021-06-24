@@ -284,7 +284,7 @@ async def __download_files(timeslot_chunk: List[datetime],
                            directory_client: DataLakeDirectoryClient,
                            retrieve_data_span: Span) -> List:
     async def __download(timeslot: datetime) -> Optional[DataFrame]:
-        data = await __download_data(timeslot, time_resolution, directory_client, retrieve_data_span)
+        data = await __download_data(timeslot, time_resolution, directory_client, 'data.json', retrieve_data_span)
 
         if not data:
             return None

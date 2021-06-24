@@ -2,11 +2,10 @@
 Contains dependencies used in several places of the application.
 """
 import asyncio
-import json
 import os
 from datetime import datetime
 from http import HTTPStatus
-from typing import Optional, Union, List, AsyncIterable
+from typing import Optional, Union, AsyncIterable
 from io import BytesIO
 
 import pandas as pd
@@ -59,29 +58,6 @@ def __get_all_dates_to_download(from_date: datetime, to_date: datetime,
     raise ValueError('(ValueError) Unknown time resolution given.')
 
 
-async def __download_data(timeslot: datetime,
-                          time_resolution: TimeResolution,
-                          directory_client: DataLakeDirectoryClient,
-                          retrieve_data_span: Span) -> Optional[Union[bytes, str]]:
-    with tracer.start_span('retrieve_data_download', child_of=retrieve_data_span) as local_span:
-        path = get_file_path_with_respect_to_time_resolution(timeslot, time_resolution, 'data.json')
-        local_span.set_tag('path', path)
-
-        file_client: DataLakeFileClient = await __get_file_client(directory_client, path)
-        if not file_client:
-            return None
-
-        try:
-            downloaded_file = await file_client.download_file()
-            data = await downloaded_file.readall()
-        except HttpResponseError as error:
-            message = f'({type(error).__name__}) Problems downloading data file: {error}'
-            logger.error(message)
-            raise HTTPException(status_code=error.status_code, detail=message) from error
-
-        return data
-
-
 def __split_into_chunks(lst, chunk_size):
     for i in range(0, len(lst), chunk_size):
         yield lst[i:i + chunk_size]
@@ -111,34 +87,6 @@ async def __download_file(filename: str, directory_client: DataLakeDirectoryClie
         message = f'({type(error).__name__}) File could not be downloaded: {error}'
         logger.error(message)
         raise HTTPException(status_code=error.status_code, detail=message) from error
-
-
-# pylint: disable=too-many-arguments
-async def __download_json_files(timeslot_chunk: List[datetime],
-                                time_resolution: TimeResolution,
-                                directory_client: DataLakeDirectoryClient,
-                                retrieve_data_span: Span,
-                                filter_key: Optional[str] = None,
-                                filters: Optional[List] = None) -> List:
-    async def __download(download_date: datetime):
-        data = await __download_data(download_date, time_resolution, directory_client, retrieve_data_span)
-
-        if not data:
-            return None
-
-        try:
-            records = json.loads(data)
-        except ValueError as error:
-            message = f'({type(error).__name__}) File is not JSON formatted: {error}'
-            logger.error(message)
-            raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR, detail=message) from error
-
-        if filters and filter_key:
-            records = [record for record in records if record[filter_key] in filters]
-
-        return records
-
-    return await asyncio.gather(*[__download(timeslot) for timeslot in timeslot_chunk])
 
 
 async def __check_directory_exist(directory_client: DataLakeDirectoryClient):
@@ -247,3 +195,27 @@ async def __download_streams(blob_name_prefix, token):
     byte_streams = await asyncio.gather(*tasks)
 
     return byte_streams
+
+
+async def __download_data(timeslot: datetime,
+                          time_resolution: TimeResolution,
+                          directory_client: DataLakeDirectoryClient,
+                          filename: str,
+                          retrieve_data_span: Span) -> Optional[Union[bytes, str]]:
+    with tracer.start_span('retrieve_data_download', child_of=retrieve_data_span) as local_span:
+        path = get_file_path_with_respect_to_time_resolution(timeslot, time_resolution, filename)
+        local_span.set_tag('path', path)
+
+        file_client: DataLakeFileClient = await __get_file_client(directory_client, path)
+        if not file_client:
+            return None
+
+        try:
+            downloaded_file = await file_client.download_file()
+            data = await downloaded_file.readall()
+        except HttpResponseError as error:
+            message = f'({type(error).__name__}) Problems downloading data file: {error}'
+            logger.error(message)
+            raise HTTPException(status_code=error.status_code, detail=message) from error
+
+        return data

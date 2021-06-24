@@ -1,19 +1,25 @@
 """
 Contains endpoints for downloading data to the DataPlatform.
 """
+import asyncio
+import json
+from datetime import datetime
 from http import HTTPStatus
 from io import BytesIO
 from typing import Optional, Tuple, List
+import pandas as pd
 
-from azure.storage.filedatalake.aio import FileSystemClient
+from azure.storage.filedatalake.aio import FileSystemClient, DataLakeDirectoryClient
 from fastapi import APIRouter, HTTPException, Security
 from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.security.api_key import APIKeyHeader
 from osiris.core.configuration import Configuration
+from osiris.core.enums import TimeResolution
+from jaeger_client import Span
 
 from ..dependencies import (__download_file, __check_directory_exist, __get_filesystem_client,
-                            __download_blob_to_stream, __split_into_chunks, __download_json_files,
-                            __get_all_dates_to_download, __parse_date_arguments)
+                            __download_blob_to_stream, __split_into_chunks,
+                            __get_all_dates_to_download, __parse_date_arguments, __download_data)
 from ..metrics import TracerClass, Metric
 
 configuration = Configuration(__file__)
@@ -71,7 +77,7 @@ async def download_json_file(guid: str,   # pylint: disable=too-many-locals
     return JSONResponse(result, status_code=status_code)
 
 
-@router.get('/jao', response_class=JSONResponse)
+@router.get('/jao', tags=["jao"], response_class=JSONResponse)
 @Metric.histogram
 async def download_jao_data(horizon: str,  # pylint: disable=too-many-locals
                             from_date: Optional[str] = None,
@@ -85,9 +91,9 @@ async def download_jao_data(horizon: str,  # pylint: disable=too-many-locals
     The horizon parameter must be set to Yearly or Monthly depending on what dataset you want data from.
     """
     logger.debug('download jao data requested')
-    if horizon == "Yearly":
+    if horizon.lower() == "Yearly":
         guid = config['JAO']['yearly_guid']
-    elif horizon == "Monthly":
+    elif horizon.lower() == "Monthly":
         guid = config['JAO']['monthly_guid']
     else:
         message = '(ValueError) horizon value can only be Yearly or Monthly.'
@@ -114,7 +120,7 @@ async def download_ikontrol_project_ids(token: str = Security(access_token_heade
         return StreamingResponse(stream, media_type='application/json')
 
 
-@router.get('/ikontrol/{project_id}', response_class=StreamingResponse)
+@router.get('/ikontrol/{project_id}', tags=["ikontrol"], response_class=StreamingResponse)
 @Metric.histogram
 async def download_ikontrol_data(project_id: int, token: str = Security(access_token_header)) -> StreamingResponse:
     """
@@ -129,7 +135,7 @@ async def download_ikontrol_data(project_id: int, token: str = Security(access_t
         return StreamingResponse(stream, media_type='application/json')
 
 
-@router.get('/ikontrol/getzip/{project_id}', response_class=StreamingResponse)
+@router.get('/ikontrol/getzip/{project_id}', tags=["ikontrol"], response_class=StreamingResponse)
 @Metric.histogram
 async def download_ikontrol_zip(project_id: int, token: str = Security(access_token_header)) -> StreamingResponse:
     """
@@ -157,7 +163,7 @@ async def __get_file_stream_for_ikontrol_file(file_path: str, filesystem_client:
     return stream
 
 
-@router.get('/neptun', response_class=JSONResponse)
+@router.get('/neptun', tags=["neptun"], response_class=JSONResponse)
 @Metric.histogram
 async def download_neptun_data(horizon: str,  # pylint: disable=too-many-locals
                                from_date: Optional[str] = None,
@@ -178,7 +184,8 @@ async def download_neptun_data(horizon: str,  # pylint: disable=too-many-locals
     The tags parameter is a list of tags (comma-separated string) which can be used to filter the data based on
     the Tag column.
     """
-    logger.debug('download jao data requested')
+    logger.debug('download neptun data requested')
+
     if horizon.lower() == 'daily':
         guid = config['Neptun']['daily_guid']
     elif horizon.lower() == 'hourly':
@@ -186,13 +193,56 @@ async def download_neptun_data(horizon: str,  # pylint: disable=too-many-locals
     elif horizon.lower() == 'minutely':
         guid = config['Neptun']['minutely_guid']
     else:
-        message = '(ValueError) The horizon parameter must be Monthly, Daily or Hourly.'
+        message = '(ValueError) The horizon parameter must be Daily, Hourly or Minutely'
         logger.error(message)
         raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=message)
 
     tags_filters = tags.split(',') if tags else None
 
     events, status_code = await __download_json_data(guid, token, from_date, to_date, 'Tag', tags_filters)
+
+    return JSONResponse(events, status_code=status_code)
+
+
+@router.get('/delfin', tags=["delfin"], response_class=JSONResponse)
+@Metric.histogram
+async def download_delfin_data(horizon: str,  # pylint: disable=too-many-locals
+                               from_date: Optional[str] = None,
+                               to_date: Optional[str] = None,
+                               table_indices: str = '',
+                               token: str = Security(access_token_header)) -> JSONResponse:
+    """
+    Download Delfin data from from_date to to_date (time period).
+    If from_date is left out, current UTC time is used.
+    If to_date is left out, only one data point is retrieved.
+
+    The horizon parameter must be set to Daily, Hourly or Minutely depending on what dataset you want data from:
+
+    If Horizon is set to Daily the date(s) must be of the form {year}-{month}-{day}
+    If Horizon is set to Hourly the date(s) must be of the form {year}-{month}-{day}T{hour}
+    If Horizon is set to Minutely the date(s) must be of the form {year}-{month}-{day}T{hour}:{minutes}
+
+    The tags parameter is a list of tags (comma-separated string) which can be used to filter the data based on
+    the Tag column.
+    """
+    logger.debug('download delfin data requested')
+
+    if horizon.lower() == 'daily':
+        guid = config['Delfin']['daily_guid']
+    elif horizon.lower() == 'hourly':
+        guid = config['Delfin']['hourly_guid']
+    elif horizon.lower() == 'minutely':
+        guid = config['Delfin']['minutely_guid']
+    else:
+        message = '(ValueError) The horizon parameter must be Daily, Hourly or Minutely.'
+        logger.error(message)
+        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=message)
+
+    # create filter. The outer list is OR and the inner list is AND.
+    table_indices_filters = [[('TABLE_INDEX', '=', index)] for index in table_indices.split(',')] if table_indices \
+        else None
+
+    events, status_code = await __download_parquet_data(guid, token, from_date, to_date, table_indices_filters)
 
     return JSONResponse(events, status_code=status_code)
 
@@ -225,7 +275,7 @@ async def __download_json_data(guid: str,  # pylint: disable=too-many-locals
         logger.error(message)
         raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=message) from error
 
-    with tracer.start_span('download_json_file') as span:
+    with tracer.start_span('download_json_data') as span:
         span.set_tag('guid', guid)
         async with await __get_filesystem_client(token) as filesystem_client:
             with tracer.start_span('get_directory_client', child_of=span):
@@ -234,7 +284,7 @@ async def __download_json_data(guid: str,  # pylint: disable=too-many-locals
             with tracer.start_span('check_directory_exists', child_of=span):
                 await __check_directory_exist(directory_client)
 
-            with tracer.start_span('retrieve_data', child_of=span) as retrieve_data_span:
+            with tracer.start_span('retrieve_json_data', child_of=span) as retrieve_data_span:
                 if to_date_obj:
                     download_dates = __get_all_dates_to_download(from_date_obj, to_date_obj, time_resolution_enum)
                     download_dates = [item.to_pydatetime() for item in download_dates.tolist()]
@@ -256,3 +306,96 @@ async def __download_json_data(guid: str,  # pylint: disable=too-many-locals
             status_code = HTTPStatus.NO_CONTENT
 
         return concat_response, status_code
+
+
+# pylint: disable=too-many-arguments
+async def __download_parquet_data(guid: str,  # pylint: disable=too-many-locals
+                                  token: str,
+                                  from_date: Optional[str] = None,
+                                  to_date: Optional[str] = None,
+                                  filters: Optional[List] = None) -> Tuple[Optional[List], int]:
+
+    try:
+        from_date_obj, to_date_obj, time_resolution_enum = __parse_date_arguments(from_date, to_date)
+    except ValueError as error:
+        message = f'({type(error).__name__}) Wrong string format for date(s): {error}'
+        logger.error(message)
+        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=message) from error
+
+    with tracer.start_span('download_delfin_files') as span:
+        span.set_tag('guid', guid)
+        async with await __get_filesystem_client(token) as filesystem_client:
+            with tracer.start_span('get_directory_client', child_of=span):
+                directory_client = filesystem_client.get_directory_client(guid)
+
+            with tracer.start_span('check_directory_exists', child_of=span):
+                await __check_directory_exist(directory_client)
+
+            with tracer.start_span('retrieve_parquet_data', child_of=span) as retrieve_data_span:
+                if to_date_obj:
+                    download_dates = __get_all_dates_to_download(from_date_obj, to_date_obj, time_resolution_enum)
+                    download_dates = [item.to_pydatetime() for item in download_dates.tolist()]
+                else:
+                    download_dates = [from_date_obj]
+
+                concat_response = []
+                for chunk in __split_into_chunks(download_dates, 200):
+                    responses = await __download_delfin_files(chunk, time_resolution_enum,
+                                                              directory_client, retrieve_data_span, filters)
+
+                    for response in responses:
+                        if response:
+                            concat_response += response
+
+        status_code = 200
+        if not concat_response:
+            status_code = HTTPStatus.NO_CONTENT
+
+        return concat_response, status_code
+
+
+# pylint: disable=too-many-arguments
+async def __download_json_files(timeslot_chunk: List[datetime],
+                                time_resolution: TimeResolution,
+                                directory_client: DataLakeDirectoryClient,
+                                retrieve_data_span: Span,
+                                filter_key: Optional[str] = None,
+                                filters: Optional[List] = None) -> List:
+    async def __download(download_date: datetime):
+        data = await __download_data(download_date, time_resolution, directory_client, 'data.json', retrieve_data_span)
+
+        if not data:
+            return None
+
+        try:
+            records = json.loads(data)
+        except ValueError as error:
+            message = f'({type(error).__name__}) File is not JSON formatted: {error}'
+            logger.error(message)
+            raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR, detail=message) from error
+
+        if filters and filter_key:
+            records = [record for record in records if record[filter_key] in filters]
+
+        return records
+
+    return await asyncio.gather(*[__download(timeslot) for timeslot in timeslot_chunk]) # noqa
+
+
+# pylint: disable=too-many-arguments
+async def __download_delfin_files(timeslot_chunk: List[datetime],
+                                  time_resolution: TimeResolution,
+                                  directory_client: DataLakeDirectoryClient,
+                                  retrieve_data_span: Span,
+                                  filters: Optional[List] = None) -> List:
+    async def __download(download_date: datetime):
+        data = await __download_data(download_date, time_resolution, directory_client,
+                                     'data.parquet', retrieve_data_span)
+        if not data:
+            return None
+
+        records = pd.read_parquet(BytesIO(data), engine='pyarrow', filters=filters)  # type: ignore
+
+        return records.to_dict(orient='records')
+
+    return await asyncio.gather(*[__download(timeslot) for timeslot in timeslot_chunk])  # noqa
