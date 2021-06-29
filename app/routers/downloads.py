@@ -395,6 +395,8 @@ async def __download_delfin_files(timeslot_chunk: List[datetime],
             return None
 
         records = pd.read_parquet(BytesIO(data), engine='pyarrow', filters=filters)  # type: ignore
+        # JSONResponse cannot handle NaN values
+        records = records.fillna('null')
 
         return records.to_dict(orient='records')
 

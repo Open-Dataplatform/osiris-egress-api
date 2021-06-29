@@ -45,15 +45,15 @@ def __get_all_dates_to_download(from_date: datetime, to_date: datetime,
         # date anyway.
         return pd.date_range(from_date.strftime("%Y-%m-%d"), from_date.strftime("%Y-%m-%d"), freq='D')
     if time_resolution == TimeResolution.YEAR:
-        return pd.date_range(from_date.strftime("%Y-%m-%d"), to_date.strftime("%Y-%m-%d"), freq='Y')
+        return pd.date_range(from_date.strftime("%Y"), to_date.strftime("%Y"), freq='Y')
     if time_resolution == TimeResolution.MONTH:
-        return pd.date_range(from_date.strftime("%Y-%m-%d"), to_date.strftime("%Y-%m-%d"), freq='M')
+        return pd.date_range(from_date.strftime("%Y-%m"), to_date.strftime("%Y-%m"), freq='M')
     if time_resolution == TimeResolution.DAY:
         return pd.date_range(from_date.strftime("%Y-%m-%d"), to_date.strftime("%Y-%m-%d"), freq='D')
     if time_resolution == TimeResolution.HOUR:
-        return pd.date_range(from_date.strftime("%Y-%m-%d"), to_date.strftime("%Y-%m-%d"), freq='H')
+        return pd.date_range(from_date.strftime("%Y-%m-%dT%H"), to_date.strftime("%Y-%m-%dT%H"), freq='H')
     if time_resolution == TimeResolution.MINUTE:
-        return pd.date_range(from_date.strftime("%Y-%m-%d"), to_date.strftime("%Y-%m-%d"), freq='T')
+        return pd.date_range(from_date.strftime("%Y-%m-%dT%H:%M"), to_date.strftime("%Y-%m-%dT%H:%M"), freq='T')
 
     raise ValueError('(ValueError) Unknown time resolution given.')
 
