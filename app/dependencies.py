@@ -172,16 +172,10 @@ async def __download_blob_to_stream(blob_name, token):
     async with await __get_filesystem_client(token) as filesystem_client:
         directory_client = filesystem_client.get_directory_client(dataset_id)
 
-        try:
-            file_client = await __get_file_client(directory_client, file_path)
-            if file_client is None:
-                raise ResourceNotFoundError()
-            byte_stream = BytesIO()
-            storage_stream = await file_client.download_file()
-            await storage_stream.readinto(byte_stream)
-            byte_stream.seek(0)
-        except ResourceNotFoundError as error:
-            raise HTTPException(status_code=404, detail="File not found") from error
+        storage_stream = await __download_file(file_path, directory_client)
+        byte_stream = BytesIO()
+        await storage_stream.readinto(byte_stream)
+        byte_stream.seek(0)
 
     return byte_stream
 
@@ -189,9 +183,9 @@ async def __download_blob_to_stream(blob_name, token):
 async def __download_streams(blob_name_prefix, token):
     filesystem_client = await __get_filesystem_client(token)
 
-    blob_names = await __get_filepaths(blob_name_prefix, filesystem_client)
+    blob_names = __get_filepaths(blob_name_prefix, filesystem_client)
 
-    tasks = [__download_blob_to_stream(blob_name, token) for blob_name in blob_names]
+    tasks = [__download_blob_to_stream(blob_name, token) async for blob_name in blob_names]
     byte_streams = await asyncio.gather(*tasks)
 
     return byte_streams
