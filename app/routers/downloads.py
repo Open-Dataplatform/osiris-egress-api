@@ -91,9 +91,9 @@ async def download_jao_data(horizon: str,  # pylint: disable=too-many-locals
     The horizon parameter must be set to Yearly or Monthly depending on what dataset you want data from.
     """
     logger.debug('download jao data requested')
-    if horizon.lower() == "Yearly":
+    if horizon.lower() == "yearly":
         guid = config['JAO']['yearly_guid']
-    elif horizon.lower() == "Monthly":
+    elif horizon.lower() == "monthly":
         guid = config['JAO']['monthly_guid']
     else:
         message = '(ValueError) horizon value can only be Yearly or Monthly.'
