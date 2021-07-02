@@ -9,7 +9,7 @@ from typing import Optional, Union, AsyncIterable
 from io import BytesIO
 
 import pandas as pd
-from azure.core.exceptions import HttpResponseError, ResourceNotFoundError
+from azure.core.exceptions import HttpResponseError, ResourceNotFoundError, ClientAuthenticationError
 from azure.storage.filedatalake.aio import DataLakeDirectoryClient, DataLakeFileClient, StorageStreamDownloader, \
     FileSystemClient
 from fastapi import HTTPException
@@ -94,6 +94,10 @@ async def __check_directory_exist(directory_client: DataLakeDirectoryClient):
         await directory_client.get_directory_properties()
     except ResourceNotFoundError as error:
         message = f'({type(error).__name__}) The given dataset doesnt exist: {error}'
+        logger.error(message)
+        raise HTTPException(status_code=error.status_code, detail=message) from error
+    except ClientAuthenticationError as error:
+        message = f'({type(error).__name__}) You do not have permission to access the dataset: {error}'
         logger.error(message)
         raise HTTPException(status_code=error.status_code, detail=message) from error
 
