@@ -70,7 +70,7 @@ async def download_json_file(guid: str,   # pylint: disable=too-many-locals
     If form_date is left out, current UTC time is used.
     If to_date is left out, only one data point is retrieved.
     """
-    logger.debug('download jao data requested')
+    logger.debug('download json data requested')
 
     result, status_code = await __download_json_data(guid, token, from_date, to_date)
 
