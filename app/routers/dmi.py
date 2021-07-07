@@ -54,7 +54,6 @@ async def get_dmi_coords_for_weather_type(weather_type: EDMIWeatherType,
     """
     Returns available coordinates for the given weather_type.
     """
-    # Function is slow, can probably be optimized if needed
     logger.debug('get DMI coords for weather type requested')
     async with await __get_filesystem_client(token) as filesystem_client:
         datetime_type_guid = config['DMI']['type_coordinate_guid']
@@ -137,11 +136,12 @@ async def __get_years_for_dmi_weather_type_and_coords(path: str, filesystem_clie
 
 async def __get_coordinates_for_dmi_weather_type(path: str, filesystem_client):
     result = []
-    paths = filesystem_client.get_paths(path=path)
-    async for filepath in paths:
-        if not filepath.is_directory:
-            continue
-        if filepath.name not in result and 'lat=' in filepath.name and 'lon=' in filepath.name:
+    paths_lat = filesystem_client.get_paths(path=path, recursive=False)
+    # Two for loops to prevent recursing files
+    async for filepath_lat in paths_lat:
+        paths_lon = filesystem_client.get_paths(path=filepath_lat.name, recursive=False)
+
+        async for filepath in paths_lon:
             lat, lon = filepath.name.split('/')[-2:]
             lat = lat.replace('lat=', '')
             lon = lon.replace('lon=', '')
