@@ -4,6 +4,7 @@ Implements endpoints which are required by the Json plugin for Grafana.
 import asyncio
 from datetime import datetime
 from http import HTTPStatus
+from io import BytesIO
 from typing import Dict, List, Optional
 import json
 
@@ -284,14 +285,14 @@ async def __download_files(timeslot_chunk: List[datetime],
                            directory_client: DataLakeDirectoryClient,
                            retrieve_data_span: Span) -> List:
     async def __download(timeslot: datetime) -> Optional[DataFrame]:
-        data = await __download_data(timeslot, time_resolution, directory_client, 'data.json', retrieve_data_span)
+        data = await __download_data(timeslot, time_resolution, directory_client, 'data.parquet', retrieve_data_span)
 
         if not data:
             return None
 
         with tracer.start_span('retrieve_data_download', child_of=retrieve_data_span):
             try:
-                file_json = pd.read_json(data)
+                file_json = pd.read_parquet(BytesIO(data), engine='pyarrow')  # type: ignore
             except ValueError as error:
                 message = f'({type(error).__name__}) File is not JSON formatted: {error}'
                 logger.error(message)
@@ -327,6 +328,7 @@ async def __retrieve_data(from_date: datetime, to_date: datetime,
 
     # Pandas need help recognizing date column if column name doesn't contain date
     data[date_key_field] = pd.to_datetime(data[date_key_field])
+    data = data[(data[date_key_field] >= from_date) & (data[date_key_field] <= to_date)]
 
     data.set_index(date_key_field, inplace=True)
 

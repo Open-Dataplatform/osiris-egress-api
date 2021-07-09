@@ -45,9 +45,9 @@ def __get_all_dates_to_download(from_date: datetime, to_date: datetime,
         # date anyway.
         return pd.date_range(from_date.strftime("%Y-%m-%d"), from_date.strftime("%Y-%m-%d"), freq='D')
     if time_resolution == TimeResolution.YEAR:
-        return pd.date_range(from_date.strftime("%Y"), to_date.strftime("%Y"), freq='Y')
+        return pd.date_range(from_date.strftime("%Y"), to_date.strftime("%Y"), freq='AS')
     if time_resolution == TimeResolution.MONTH:
-        return pd.date_range(from_date.strftime("%Y-%m"), to_date.strftime("%Y-%m"), freq='M')
+        return pd.date_range(from_date.strftime("%Y-%m"), to_date.strftime("%Y-%m"), freq='MS')
     if time_resolution == TimeResolution.DAY:
         return pd.date_range(from_date.strftime("%Y-%m-%d"), to_date.strftime("%Y-%m-%d"), freq='D')
     if time_resolution == TimeResolution.HOUR:
