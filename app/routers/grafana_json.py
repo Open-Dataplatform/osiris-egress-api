@@ -292,13 +292,13 @@ async def __download_files(timeslot_chunk: List[datetime],
 
         with tracer.start_span('retrieve_data_download', child_of=retrieve_data_span):
             try:
-                file_json = pd.read_parquet(BytesIO(data), engine='pyarrow')  # type: ignore
-            except ValueError as error:
-                message = f'({type(error).__name__}) File is not JSON formatted: {error}'
+                file_parquet = pd.read_parquet(BytesIO(data), engine='pyarrow')  # type: ignore
+            except Exception as error:
+                message = f'({type(error).__name__}) File is not correctly Parquet formatted: {error}'
                 logger.error(message)
                 raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR, detail=message) from error
 
-            return file_json
+            return file_parquet
 
     return await asyncio.gather(*[__download(timeslot) for timeslot in timeslot_chunk])
 
