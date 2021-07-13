@@ -44,7 +44,7 @@ async def get_leak_cable_id(
     byte_stream = await __download_blob_to_stream(blob_name, token)
     dataframe = pd.read_parquet(byte_stream)
 
-    dataframe = __filter_datetime(dataframe, from_date, to_date)
+    dataframe = _filter_datetime(dataframe, from_date, to_date)
 
     json_data = dataframe.to_json(orient="records")
 
@@ -69,7 +69,7 @@ async def get_leak_cable(
     dfs = [pd.read_parquet(byte_stream) for byte_stream in byte_streams]
     dataframe = pd.concat(dfs)
 
-    dataframe = __filter_datetime(dataframe, from_date, to_date)
+    dataframe = _filter_datetime(dataframe, from_date, to_date)
     dataframe["date"] = dataframe["date"].dt.strftime("%Y-%m-%d")
 
     json_data = dataframe.to_json(orient="records")
@@ -95,7 +95,7 @@ async def get_leak_cable_daily(
 
     dataframe = pd.read_parquet(byte_stream)
 
-    dataframe = __filter_datetime(
+    dataframe = _filter_datetime(
         dataframe, from_date, to_date, date_column="timestamp"
     )
 
@@ -123,19 +123,20 @@ async def get_leak_cable_daily(
 
     if len(groups) == 0:
         raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST, detail="No data available"
+            status_code=HTTPStatus.BAD_REQUEST,  # TODO Return status 204 instead?
+            detail="No data available"
         )
 
     dataframe = functools.reduce(
         lambda a, b: pd.merge(a, b, on=["cable_id", "date"]), groups
     )
 
-    json_data = dataframe.to_json(orient="records")
+    json_data = dataframe.to_dict(orient="records")
 
     return JSONResponse(json_data)
 
 
-def __filter_datetime(dataframe, from_date, to_date, date_column="date"):
+def _filter_datetime(dataframe, from_date, to_date, date_column="date"):
     from_date_obj, to_date_obj, _ = __parse_date_arguments(from_date, to_date)
 
     if to_date_obj is None:
