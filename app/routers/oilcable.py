@@ -97,9 +97,7 @@ async def get_leak_cable_daily(
 
     dataframe["timestamp"] = pd.to_datetime(dataframe["timestamp"])
 
-    dataframe = _filter_datetime(
-        dataframe, from_date, to_date, date_column="timestamp"
-    )
+    dataframe = _filter_datetime(dataframe, from_date, to_date, date_column="timestamp")
 
     if cable_id:
         dataframe = dataframe.query("cable_id == @cable_id")
@@ -125,8 +123,7 @@ async def get_leak_cable_daily(
 
     if len(groups) == 0:
         raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST,  # TODO Return status 204 instead?
-            detail="No data available"
+            status_code=HTTPStatus.NO_CONTENT, detail="No data available"
         )
 
     dataframe = functools.reduce(
@@ -135,7 +132,9 @@ async def get_leak_cable_daily(
 
     dataframe = dataframe.round(2)
     first_columns = ["cable_id", "date"]
-    column_order = first_columns + [column for column in dataframe.columns if not column in first_columns]
+    column_order = first_columns + [
+        column for column in dataframe.columns if column not in first_columns
+    ]
     dataframe = dataframe[column_order]
 
     json_data = dataframe.to_dict(orient="records")
@@ -148,9 +147,6 @@ def _filter_datetime(dataframe, from_date, to_date, date_column="date"):
 
     if to_date_obj is None:
         to_date_obj = pd.Timestamp.max
-
-    print(type(from_date_obj))
-    print(type(to_date_obj))
 
     dataframe = dataframe[
         (from_date_obj <= dataframe[date_column])
