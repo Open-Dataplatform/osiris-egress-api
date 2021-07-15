@@ -3,6 +3,7 @@ Contains endpoints for downloading data to the DataPlatform.
 """
 import asyncio
 import json
+import typing
 from datetime import datetime
 from http import HTTPStatus
 from io import BytesIO
@@ -11,7 +12,7 @@ import pandas as pd
 
 from azure.storage.filedatalake.aio import FileSystemClient, DataLakeDirectoryClient
 from fastapi import APIRouter, HTTPException, Security
-from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi.responses import Response, StreamingResponse, JSONResponse
 from fastapi.security.api_key import APIKeyHeader
 from osiris.core.configuration import Configuration
 from osiris.core.enums import TimeResolution
@@ -64,7 +65,7 @@ tracer = TracerClass().get_tracer()
 async def download_json_file(guid: str,   # pylint: disable=too-many-locals
                              from_date: Optional[str] = None,
                              to_date: Optional[str] = None,
-                             token: str = Security(access_token_header)) -> JSONResponse:
+                             token: str = Security(access_token_header)) -> typing.Union[JSONResponse, Response]:
     """
     Download JSON endpoint with data from from_date to to_date (time period).
     If form_date is left out, current UTC time is used.
@@ -74,7 +75,9 @@ async def download_json_file(guid: str,   # pylint: disable=too-many-locals
 
     result, status_code = await __download_json_data(guid, token, from_date, to_date)
 
-    return JSONResponse(result, status_code=status_code)
+    if result:
+        return JSONResponse(result, status_code=status_code)
+    return Response(status_code=status_code)    # No data
 
 
 @router.get('/jao', tags=["jao"], response_class=JSONResponse)
@@ -169,7 +172,7 @@ async def download_neptun_data(horizon: str,  # pylint: disable=too-many-locals
                                from_date: Optional[str] = None,
                                to_date: Optional[str] = None,
                                tags: str = '',
-                               token: str = Security(access_token_header)) -> JSONResponse:
+                               token: str = Security(access_token_header)) -> typing.Union[JSONResponse, Response]:
     """
     Download Neptun data from from_date to to_date (time period).
     If from_date is left out, current UTC time is used.
@@ -202,7 +205,9 @@ async def download_neptun_data(horizon: str,  # pylint: disable=too-many-locals
 
     events, status_code = await __download_parquet_data(guid, token, from_date, to_date, tag_filters)
 
-    return JSONResponse(events, status_code=status_code)
+    if events:
+        return JSONResponse(events, status_code=status_code)
+    return Response(status_code=status_code)    # No data
 
 
 @router.get('/delfin', tags=["delfin"], response_class=JSONResponse)
@@ -211,7 +216,7 @@ async def download_delfin_data(horizon: str,  # pylint: disable=too-many-locals
                                from_date: Optional[str] = None,
                                to_date: Optional[str] = None,
                                table_indices: str = '',
-                               token: str = Security(access_token_header)) -> JSONResponse:
+                               token: str = Security(access_token_header)) -> typing.Union[JSONResponse, Response]:
     """
     Download Delfin data from from_date to to_date (time period).
     If from_date is left out, current UTC time is used.
@@ -245,7 +250,9 @@ async def download_delfin_data(horizon: str,  # pylint: disable=too-many-locals
 
     events, status_code = await __download_parquet_data(guid, token, from_date, to_date, table_indices_filters)
 
-    return JSONResponse(events, status_code=status_code)
+    if events:
+        return JSONResponse(events, status_code=status_code)
+    return Response(status_code=status_code)    # No data
 
 
 @router.get("/download", response_class=StreamingResponse)
