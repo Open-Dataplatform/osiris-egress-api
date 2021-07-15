@@ -85,7 +85,7 @@ async def download_json_file(guid: str,   # pylint: disable=too-many-locals
 async def download_jao_data(horizon: str,  # pylint: disable=too-many-locals
                             from_date: Optional[str] = None,
                             to_date: Optional[str] = None,
-                            token: str = Security(access_token_header)) -> JSONResponse:
+                            token: str = Security(access_token_header)) -> typing.Union[JSONResponse, Response]:
     """
     Download JAO data from from_date to to_date (time period).
     If form_date is left out, current UTC time is used.
@@ -105,7 +105,10 @@ async def download_jao_data(horizon: str,  # pylint: disable=too-many-locals
 
     result, status_code = await __download_parquet_data(guid, token, from_date, to_date)
 
-    return JSONResponse(result, status_code=status_code)
+    if result:
+        return JSONResponse(result, status_code=status_code)
+
+    return Response(status_code=status_code)   # No data
 
 
 @router.get('/ikontrol/getallprojects', response_class=StreamingResponse)
@@ -406,6 +409,6 @@ async def __download_parquet_files(timeslot_chunk: List[datetime],
         # JSONResponse cannot handle NaN values
         records = records.fillna('null')
 
-        return records.to_dict(orient='records')
+        return json.loads(records.to_json(orient='records'))
 
     return await asyncio.gather(*[__download(timeslot) for timeslot in timeslot_chunk])  # noqa
