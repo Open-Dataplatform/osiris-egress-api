@@ -95,6 +95,8 @@ async def get_leak_cable_daily(
 
     dataframe = pd.read_parquet(byte_stream)
 
+    dataframe["timestamp"] = pd.to_datetime(dataframe["timestamp"])
+
     dataframe = _filter_datetime(
         dataframe, from_date, to_date, date_column="timestamp"
     )
@@ -131,6 +133,11 @@ async def get_leak_cable_daily(
         lambda a, b: pd.merge(a, b, on=["cable_id", "date"]), groups
     )
 
+    dataframe = dataframe.round(2)
+    first_columns = ["cable_id", "date"]
+    column_order = first_columns + [column for column in dataframe.columns if not column in first_columns]
+    dataframe = dataframe[column_order]
+
     json_data = dataframe.to_dict(orient="records")
 
     return JSONResponse(json_data)
@@ -141,6 +148,9 @@ def _filter_datetime(dataframe, from_date, to_date, date_column="date"):
 
     if to_date_obj is None:
         to_date_obj = pd.Timestamp.max
+
+    print(type(from_date_obj))
+    print(type(to_date_obj))
 
     dataframe = dataframe[
         (from_date_obj <= dataframe[date_column])
