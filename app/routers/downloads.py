@@ -409,6 +409,7 @@ async def __download_parquet_files(timeslot_chunk: List[datetime],
         # JSONResponse cannot handle NaN values
         records = records.fillna('null')
 
+        # It would be better to use records.to_dict, but pandas uses narray type which JSONResponse can't handle.
         return json.loads(records.to_json(orient='records'))
 
     return await asyncio.gather(*[__download(timeslot) for timeslot in timeslot_chunk])  # noqa
