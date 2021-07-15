@@ -100,7 +100,7 @@ async def download_jao_data(horizon: str,  # pylint: disable=too-many-locals
         logger.error(message)
         raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=message)
 
-    result, status_code = await __download_json_data(guid, token, from_date, to_date)
+    result, status_code = await __download_parquet_data(guid, token, from_date, to_date)
 
     return JSONResponse(result, status_code=status_code)
 
@@ -341,8 +341,8 @@ async def __download_parquet_data(guid: str,  # pylint: disable=too-many-locals
 
                 concat_response = []
                 for chunk in __split_into_chunks(download_dates, 200):
-                    responses = await __download_delfin_files(chunk, time_resolution_enum,
-                                                              directory_client, retrieve_data_span, filters)
+                    responses = await __download_parquet_files(chunk, time_resolution_enum,
+                                                               directory_client, retrieve_data_span, filters)
 
                     for response in responses:
                         if response:
@@ -384,11 +384,11 @@ async def __download_json_files(timeslot_chunk: List[datetime],
 
 
 # pylint: disable=too-many-arguments
-async def __download_delfin_files(timeslot_chunk: List[datetime],
-                                  time_resolution: TimeResolution,
-                                  directory_client: DataLakeDirectoryClient,
-                                  retrieve_data_span: Span,
-                                  filters: Optional[List] = None) -> List:
+async def __download_parquet_files(timeslot_chunk: List[datetime],
+                                   time_resolution: TimeResolution,
+                                   directory_client: DataLakeDirectoryClient,
+                                   retrieve_data_span: Span,
+                                   filters: Optional[List] = None) -> List:
     async def __download(download_date: datetime):
         data = await __download_data(download_date, time_resolution, directory_client,
                                      'data.parquet', retrieve_data_span)
