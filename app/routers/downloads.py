@@ -184,7 +184,7 @@ async def download_neptun_data(horizon: str,  # pylint: disable=too-many-locals
     The tags parameter is a list of tags (comma-separated string) which can be used to filter the data based on
     the Tag column.
     """
-    logger.debug('download neptun data requested')
+    logger.debug('download Neptun data requested')
 
     if horizon.lower() == 'daily':
         guid = config['Neptun']['daily_guid']
@@ -197,9 +197,10 @@ async def download_neptun_data(horizon: str,  # pylint: disable=too-many-locals
         logger.error(message)
         raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=message)
 
-    tags_filters = tags.split(',') if tags else None
+    # create filter. The outer list is OR and the inner list is AND.
+    tag_filters = [[('Tag', '=', tag)] for tag in tags.split(',')] if tags else None
 
-    events, status_code = await __download_json_data(guid, token, from_date, to_date, 'Tag', tags_filters)
+    events, status_code = await __download_parquet_data(guid, token, from_date, to_date, tag_filters)
 
     return JSONResponse(events, status_code=status_code)
 
