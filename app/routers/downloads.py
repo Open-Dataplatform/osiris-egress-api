@@ -9,6 +9,7 @@ from http import HTTPStatus
 from io import BytesIO
 from typing import Optional, Tuple, List
 import pandas as pd
+from azure.core.exceptions import ResourceNotFoundError
 
 from azure.storage.filedatalake.aio import FileSystemClient, DataLakeDirectoryClient
 from fastapi import APIRouter, HTTPException, Security
@@ -109,6 +110,35 @@ async def download_jao_data(horizon: str,  # pylint: disable=too-many-locals
         return JSONResponse(result, status_code=status_code)
 
     return Response(status_code=status_code)   # No data
+
+
+@router.get('/jao_eds/{year}/{month}/{border}', tags=["jao_eds"], response_class=StreamingResponse)
+@Metric.histogram
+async def download_jao_eds_data(year: int,
+                                month: int,
+                                border: str,
+                                token: str = Security(access_token_header)) -> typing.Union[StreamingResponse,
+                                                                                            Response]:
+    """
+    Download JAO EDS calculations for a specific year, month, and border.
+
+    Example: jao_eds/2021/04/D2-DE
+    Returns the content in parquet format.
+    """
+    guid = config['JAO EDS']['guid']
+
+    async with await __get_filesystem_client(token) as filesystem_client:
+        try:
+            path = f'{guid}/year={year}/month={month:02d}/{border}.parquet'
+            directory_client = filesystem_client.get_directory_client(guid)
+            await __check_directory_exist(directory_client)
+            file_download = await __download_file(path, filesystem_client)
+            file_content = await file_download.readall()
+
+            bytes_io = BytesIO(file_content)
+        except ResourceNotFoundError as error:
+            raise HTTPException(status_code=404, detail="File not found") from error
+        return StreamingResponse(bytes_io, media_type='application/octet-stream')
 
 
 @router.get('/ikontrol/getallprojects', response_class=StreamingResponse)
@@ -363,6 +393,34 @@ async def __download_parquet_data(guid: str,  # pylint: disable=too-many-locals
             status_code = HTTPStatus.NO_CONTENT
 
         return concat_response, status_code
+
+
+# # pylint: disable=too-many-arguments
+# async def __download_json_files(timeslot_chunk: List[datetime],
+#                                 time_resolution: TimeResolution,
+#                                 directory_client: DataLakeDirectoryClient,
+#                                 retrieve_data_span: Span,
+#                                 filter_key: Optional[str] = None,
+#                                 filters: Optional[List] = None) -> List:
+#     async def __download(download_date: datetime):
+#        data = await __download_data(download_date, time_resolution, directory_client, 'data.json', retrieve_data_span)
+#
+#         if not data:
+#             return None
+#
+#         try:
+#             records = json.loads(data)
+#         except ValueError as error:
+#             message = f'({type(error).__name__}) File is not JSON formatted: {error}'
+#             logger.error(message)
+#             raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR, detail=message) from error
+#
+#         if filters and filter_key:
+#             records = [record for record in records if record[filter_key] in filters]
+#
+#         return records
+#
+#     return await asyncio.gather(*[__download(timeslot) for timeslot in timeslot_chunk]) # noqa
 
 
 # pylint: disable=too-many-arguments
