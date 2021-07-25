@@ -35,32 +35,6 @@ router = APIRouter(tags=['downloads'])
 tracer = TracerClass().get_tracer()
 
 
-# @router.get('/{guid}', response_class=StreamingResponse)
-# @Metric.histogram
-# async def download_file(guid: str,
-#                         file_date: datetime = datetime.utcnow(),
-#                         token: str = Security(access_token_header)) -> StreamingResponse:
-#     """
-#     Download file from data storage from the given date (UTC). This endpoint expects data to be
-#     stored in the folder {guid}/year={date.year:02d}/month={date.month:02d}/day={date.day:02d}/, but doesnt make
-#     any assumption about the filename and file extension.
-#     """
-#     logger.debug('download file requested')
-#
-#     with tracer.start_span('download_file') as span:
-#         span.set_tag('guid', guid)
-#         async with await __get_filesystem_client(token) as filesystem_client:
-#             with tracer.start_active_span('get_directory_client', child_of=span):
-#                 directory_client = filesystem_client.get_directory_client(guid)
-#             with tracer.start_active_span('check_directory_exists', child_of=span):
-#                 __check_directory_exist(directory_client)
-#             with tracer.start_active_span('download_file', child_of=span):
-#                 path = __get_path_for_arbitrary_file(file_date, guid, filesystem_client)
-#                 stream = __download_file(path, directory_client)
-#
-#             return StreamingResponse(stream.chunks(), media_type='application/octet-stream')
-
-
 @router.get('/{guid}/json', response_class=JSONResponse)
 @Metric.histogram
 async def download_json_file(guid: str,   # pylint: disable=too-many-locals
@@ -301,54 +275,6 @@ async def download_file(
     return StreamingResponse(byte_stream, media_type="application/octet-stream")
 
 
-# # pylint: disable=too-many-arguments
-# async def __download_json_data(guid: str,  # pylint: disable=too-many-locals
-#                                token: str,
-#                                from_date: Optional[str] = None,
-#                                to_date: Optional[str] = None,
-#                                filter_key: Optional[str] = None,
-#                                filters: Optional[List] = None) -> Tuple[Optional[List], int]:
-#
-#     try:
-#         from_date_obj, to_date_obj, time_resolution_enum = __parse_date_arguments(from_date, to_date)
-#     except ValueError as error:
-#         message = f'({type(error).__name__}) Wrong string format for date(s): {error}'
-#         logger.error(message)
-#         raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=message) from error
-#
-#     with tracer.start_span('download_json_data') as span:
-#         span.set_tag('guid', guid)
-#         async with await __get_filesystem_client(token) as filesystem_client:
-#             with tracer.start_span('get_directory_client', child_of=span):
-#                 directory_client = filesystem_client.get_directory_client(guid)
-#
-#             with tracer.start_span('check_directory_exists', child_of=span):
-#                 await __check_directory_exist(directory_client)
-#
-#             with tracer.start_span('retrieve_json_data', child_of=span) as retrieve_data_span:
-#                 if to_date_obj:
-#                     download_dates = __get_all_dates_to_download(from_date_obj, to_date_obj, time_resolution_enum)
-#                     download_dates = [item.to_pydatetime() for item in download_dates.tolist()]
-#                 else:
-#                     download_dates = [from_date_obj]
-#
-#                 concat_response = []
-#                 for chunk in __split_into_chunks(download_dates, 200):
-#                     responses = await __download_json_files(chunk, time_resolution_enum,
-#                                                             directory_client, retrieve_data_span,
-#                                                             filter_key, filters)
-#
-#                     for response in responses:
-#                         if response:
-#                             concat_response += response
-#
-#         status_code = 200
-#         if not concat_response:
-#             status_code = HTTPStatus.NO_CONTENT
-#
-#         return concat_response, status_code
-
-
 # pylint: disable=too-many-arguments
 async def __download_parquet_data(guid: str,  # pylint: disable=too-many-locals
                                   token: str,
@@ -393,34 +319,6 @@ async def __download_parquet_data(guid: str,  # pylint: disable=too-many-locals
             status_code = HTTPStatus.NO_CONTENT
 
         return concat_response, status_code
-
-
-# # pylint: disable=too-many-arguments
-# async def __download_json_files(timeslot_chunk: List[datetime],
-#                                 time_resolution: TimeResolution,
-#                                 directory_client: DataLakeDirectoryClient,
-#                                 retrieve_data_span: Span,
-#                                 filter_key: Optional[str] = None,
-#                                 filters: Optional[List] = None) -> List:
-#     async def __download(download_date: datetime):
-#        data = await __download_data(download_date, time_resolution, directory_client, 'data.json', retrieve_data_span)
-#
-#         if not data:
-#             return None
-#
-#         try:
-#             records = json.loads(data)
-#         except ValueError as error:
-#             message = f'({type(error).__name__}) File is not JSON formatted: {error}'
-#             logger.error(message)
-#             raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR, detail=message) from error
-#
-#         if filters and filter_key:
-#             records = [record for record in records if record[filter_key] in filters]
-#
-#         return records
-#
-#     return await asyncio.gather(*[__download(timeslot) for timeslot in timeslot_chunk]) # noqa
 
 
 # pylint: disable=too-many-arguments

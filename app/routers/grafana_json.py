@@ -52,7 +52,7 @@ async def test_connection(guid: str, client_id: str = Header(None), client_secre
 
     logger.debug('Grafana root requested for GUID %s', guid)
 
-    with await __get_directory_client(guid, client_id, client_secret) as directory_client:
+    async with await __get_directory_client(guid, client_id, client_secret) as directory_client:
         await __check_directory_exist(directory_client)
 
         return JSONResponse(content={'message': 'Grafana datasource used for timeseries data.'},
@@ -69,7 +69,7 @@ async def search(guid: str, client_id: str = Header(None), client_secret: str = 
     with tracer.start_span('grafana_search') as span:
         span.set_tag('guid', guid)
 
-        with await __get_directory_client(guid, client_id, client_secret) as directory_client:
+        async with await __get_directory_client(guid, client_id, client_secret) as directory_client:
             with tracer.start_active_span('get_grafana_settings', child_of=span):
                 grafana_settings = await __get_grafana_settings(directory_client)
             with tracer.start_active_span('sort metrics', child_of=span):
@@ -93,7 +93,7 @@ async def query(guid: str, request: QueryRequest,
         if not __is_targets_set_for_all(request.targets):
             return JSONResponse(content=[], status_code=HTTPStatus.OK)
 
-        with await __get_directory_client(guid, client_id, client_secret) as directory_client:
+        async with await __get_directory_client(guid, client_id, client_secret) as directory_client:
             with tracer.start_active_span('get_grafana_settings', child_of=span):
                 grafana_settings = await __get_grafana_settings(directory_client)
             from_date = pd.Timestamp(request.range['from']).to_pydatetime()
@@ -145,7 +145,7 @@ async def tag_keys(guid: str, client_id: str = Header(None), client_secret: str 
     """
     logger.debug('Grafana tag-keys requested for GUID %s', guid)
 
-    with await __get_directory_client(guid, client_id, client_secret) as directory_client:
+    async with await __get_directory_client(guid, client_id, client_secret) as directory_client:
         grafana_settings = await __get_grafana_settings(directory_client)
 
         return JSONResponse(content=grafana_settings['tag_keys'], status_code=HTTPStatus.OK)
@@ -160,7 +160,7 @@ async def tag_values(guid: str, request: TagValuesRequest,
     """
     logger.debug('Grafana tag-values requested for GUID %s', guid)
 
-    with await __get_directory_client(guid, client_id, client_secret) as directory_client:
+    async with await __get_directory_client(guid, client_id, client_secret) as directory_client:
         grafana_settings = await __get_grafana_settings(directory_client)
 
         if request.key in grafana_settings['tag_values']:
@@ -208,10 +208,11 @@ def __dataframe_to_response(data_df: DataFrame, target_type: str, target: str,
 
     target_return_name, data_df = __filter_with_additional_filters(data_df, target, additional_filters)
 
-    data_df = __resample_timeframe(data_df, freq)
+    if target != 'Raw':
+        data_df = __resample_timeframe(data_df, freq)
 
-    if target:
-        data_df = data_df[target]
+        if target:
+            data_df = data_df[target]
 
     data_df = data_df.replace({np.nan: None}).sort_index()
 
@@ -232,7 +233,7 @@ def __dataframe_to_timeserie_response(data_df: DataFrame, target_return_name: st
     if data_df.empty:
         return [{'target': target_return_name, 'datapoints': []}]
 
-    timestamps = (data_df.index.astype(np.int64) // 10 ** 6).values.tolist()
+    timestamps = (data_df.index.view(np.int64) // 10 ** 6).tolist()
     values = data_df.values.tolist()
 
     return [{'target': target_return_name, 'datapoints': list(zip(values, timestamps))}]
