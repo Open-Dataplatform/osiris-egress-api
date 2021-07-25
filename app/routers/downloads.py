@@ -365,34 +365,6 @@ async def __download_parquet_data(guid: str,  # pylint: disable=too-many-locals
         return concat_response, status_code
 
 
-# # pylint: disable=too-many-arguments
-# async def __download_json_files(timeslot_chunk: List[datetime],
-#                                 time_resolution: TimeResolution,
-#                                 directory_client: DataLakeDirectoryClient,
-#                                 retrieve_data_span: Span,
-#                                 filter_key: Optional[str] = None,
-#                                 filters: Optional[List] = None) -> List:
-#     async def __download(download_date: datetime):
-#         data = await __download_data(download_date, time_resolution, directory_client, 'data.json', retrieve_data_span)
-#
-#         if not data:
-#             return None
-#
-#         try:
-#             records = json.loads(data)
-#         except ValueError as error:
-#             message = f'({type(error).__name__}) File is not JSON formatted: {error}'
-#             logger.error(message)
-#             raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR, detail=message) from error
-#
-#         if filters and filter_key:
-#             records = [record for record in records if record[filter_key] in filters]
-#
-#         return records
-#
-#     return await asyncio.gather(*[__download(timeslot) for timeslot in timeslot_chunk]) # noqa
-
-
 # pylint: disable=too-many-arguments
 async def __download_parquet_files(timeslot_chunk: List[datetime],
                                    time_resolution: TimeResolution,

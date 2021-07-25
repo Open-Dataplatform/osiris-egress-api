@@ -11,3 +11,6 @@ starlette_exporter
 osiris-sdk
 prometheus_client
 jaeger_client
+pytest-mock
+mock
+pytest-asyncio
