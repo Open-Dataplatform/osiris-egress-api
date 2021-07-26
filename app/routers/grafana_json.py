@@ -52,11 +52,13 @@ async def test_connection(guid: str, client_id: str = Header(None), client_secre
 
     logger.debug('Grafana root requested for GUID %s', guid)
 
-    async with await __get_directory_client(guid, client_id, client_secret) as directory_client:
-        await __check_directory_exist(directory_client)
+    directory_client = await __get_directory_client(guid, client_id, client_secret)
 
-        return JSONResponse(content={'message': 'Grafana datasource used for timeseries data.'},
-                            status_code=HTTPStatus.OK)
+    await __check_directory_exist(directory_client)
+
+    await directory_client.close()
+
+    return JSONResponse(content={'message': 'Grafana datasource used for timeseries data.'}, status_code=HTTPStatus.OK)
 
 
 @router.post('/grafana/{guid}/search')
@@ -69,14 +71,16 @@ async def search(guid: str, client_id: str = Header(None), client_secret: str = 
     with tracer.start_span('grafana_search') as span:
         span.set_tag('guid', guid)
 
-        async with await __get_directory_client(guid, client_id, client_secret) as directory_client:
-            with tracer.start_active_span('get_grafana_settings', child_of=span):
-                grafana_settings = await __get_grafana_settings(directory_client)
-            with tracer.start_active_span('sort metrics', child_of=span):
-                metrics = grafana_settings['metrics']
-                metrics.sort()
+        with tracer.start_active_span('get_directory_client', child_of=span):
+            directory_client = await __get_directory_client(guid, client_id, client_secret)
+        with tracer.start_active_span('get_grafana_settings', child_of=span):
+            grafana_settings = await __get_grafana_settings(directory_client)
+        with tracer.start_active_span('sort metrics', child_of=span):
+            metrics = grafana_settings['metrics']
+            metrics.sort()
 
-            return JSONResponse(content=metrics, status_code=HTTPStatus.OK)
+        await directory_client.close()
+        return JSONResponse(content=metrics, status_code=HTTPStatus.OK)
 
 
 @router.post('/grafana/{guid}/query')
@@ -93,36 +97,38 @@ async def query(guid: str, request: QueryRequest,
         if not __is_targets_set_for_all(request.targets):
             return JSONResponse(content=[], status_code=HTTPStatus.OK)
 
-        async with await __get_directory_client(guid, client_id, client_secret) as directory_client:
-            with tracer.start_active_span('get_grafana_settings', child_of=span):
-                grafana_settings = await __get_grafana_settings(directory_client)
-            from_date = pd.Timestamp(request.range['from']).to_pydatetime()
-            to_date = pd.Timestamp(request.range['to']).to_pydatetime()
-            span.set_tag('request_from_date', str(from_date))
-            span.set_tag('request_to_date', str(to_date))
+        with tracer.start_span('get_directory_client', child_of=span):
+            directory_client = await __get_directory_client(guid, client_id, client_secret)
+        with tracer.start_active_span('get_grafana_settings', child_of=span):
+            grafana_settings = await __get_grafana_settings(directory_client)
+        from_date = pd.Timestamp(request.range['from']).to_pydatetime()
+        to_date = pd.Timestamp(request.range['to']).to_pydatetime()
+        span.set_tag('request_from_date', str(from_date))
+        span.set_tag('request_to_date', str(to_date))
 
-            with tracer.start_span('retrieve_data', child_of=span) as retrieve_data_span:
-                data_df = await __retrieve_data(from_date, to_date, grafana_settings,
-                                                directory_client, retrieve_data_span)
-            with tracer.start_span('filter_with_adhoc_filters', child_of=span):
-                data_df = __filter_with_adhoc_filters(data_df, request.adhocFilters, grafana_settings)
+        with tracer.start_span('retrieve_data', child_of=span) as retrieve_data_span:
+            data_df = await __retrieve_data(from_date, to_date, grafana_settings,
+                                            directory_client, retrieve_data_span)
+        with tracer.start_span('filter_with_adhoc_filters', child_of=span):
+            data_df = __filter_with_adhoc_filters(data_df, request.adhocFilters, grafana_settings)
 
-            freq = f'{request.intervalMs}ms'
+        freq = f'{request.intervalMs}ms'
 
-            results = []
-            with tracer.start_span('data_frame_to_response', child_of=span):
-                for target in request.targets:
-                    results.extend(__dataframe_to_response(data_df, target.type, target.target,
-                                                           target.data, freq, grafana_settings))
+        results = []
+        with tracer.start_span('data_frame_to_response', child_of=span):
+            for target in request.targets:
+                results.extend(__dataframe_to_response(data_df, target.type, target.target,
+                                                       target.data, freq, grafana_settings))
 
-            with tracer.start_span('get_size_of_result', child_of=span):
-                # We use repr(.) here, which is the printable representation of the object
-                # - it is not fully accurate - as, i.e., a float or integer printed can take up less space
-                # - Not sure how objects like floats and ints are transmitted
-                # - We did not use len(pickle(results)) as it is a security issue according to bandit
-                span.set_tag('result_size', len(repr(results)))
+        with tracer.start_span('get_size_of_result', child_of=span):
+            # We use repr(.) here, which is the printable representation of the object
+            # - it is not fully accurate - as, i.e., a float or integer printed can take up less space
+            # - Not sure how objects like floats and ints are transmitted
+            # - We did not use len(pickle(results)) as it is a security issue according to bandit
+            span.set_tag('result_size', len(repr(results)))
 
-            return JSONResponse(content=results, status_code=HTTPStatus.OK)
+        await directory_client.close()
+        return JSONResponse(content=results, status_code=HTTPStatus.OK)
 
 
 @router.post('/grafana/{guid}/annotations')
@@ -145,10 +151,11 @@ async def tag_keys(guid: str, client_id: str = Header(None), client_secret: str 
     """
     logger.debug('Grafana tag-keys requested for GUID %s', guid)
 
-    async with await __get_directory_client(guid, client_id, client_secret) as directory_client:
-        grafana_settings = await __get_grafana_settings(directory_client)
+    directory_client = await __get_directory_client(guid, client_id, client_secret)
+    grafana_settings = await __get_grafana_settings(directory_client)
 
-        return JSONResponse(content=grafana_settings['tag_keys'], status_code=HTTPStatus.OK)
+    await directory_client.close()
+    return JSONResponse(content=grafana_settings['tag_keys'], status_code=HTTPStatus.OK)
 
 
 @router.post('/grafana/{guid}/tag-values')
@@ -160,13 +167,14 @@ async def tag_values(guid: str, request: TagValuesRequest,
     """
     logger.debug('Grafana tag-values requested for GUID %s', guid)
 
-    async with await __get_directory_client(guid, client_id, client_secret) as directory_client:
-        grafana_settings = await __get_grafana_settings(directory_client)
+    directory_client = await __get_directory_client(guid, client_id, client_secret)
+    grafana_settings = await __get_grafana_settings(directory_client)
 
-        if request.key in grafana_settings['tag_values']:
-            return JSONResponse(content=grafana_settings['tag_values'][request.key], status_code=HTTPStatus.OK)
+    if request.key in grafana_settings['tag_values']:
+        return JSONResponse(content=grafana_settings['tag_values'][request.key], status_code=HTTPStatus.OK)
 
-        return JSONResponse(content=[], status_code=HTTPStatus.OK)
+    await directory_client.close()
+    return JSONResponse(content=[], status_code=HTTPStatus.OK)
 
 
 def __is_targets_set_for_all(targets):
