@@ -4,6 +4,7 @@ azure-core
 azure-storage-file-datalake
 pandas
 numpy
+json
 pydantic
 asyncio
 aiohttp
