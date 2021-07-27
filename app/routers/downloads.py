@@ -100,19 +100,14 @@ async def download_jao_eds_data(year: int,
     Returns the content in parquet format.
     """
     guid = config['JAO EDS']['guid']
+    path = f'year={year}/month={month:02d}/{border}.parquet'
 
-    async with await __get_filesystem_client(token) as filesystem_client:
-        try:
-            path = f'{guid}/year={year}/month={month:02d}/{border}.parquet'
-            directory_client = filesystem_client.get_directory_client(guid)
-            await __check_directory_exist(directory_client)
-            file_download = await __download_file(path, filesystem_client)
-            file_content = await file_download.readall()
+    json_data, status_code = await __download_parquet_file_path(guid, path, token)
 
-            bytes_io = BytesIO(file_content)
-        except ResourceNotFoundError as error:
-            raise HTTPException(status_code=404, detail="File not found") from error
-        return StreamingResponse(bytes_io, media_type='application/octet-stream')
+    if json_data:
+        return JSONResponse(json_data, status_code=status_code)
+
+    return Response(status_code=status_code)   # No data
 
 
 @router.get('/ikontrol/getallprojects', response_class=StreamingResponse)
@@ -341,3 +336,22 @@ async def __download_parquet_files(timeslot_chunk: List[datetime],
         return json.loads(records.to_json(orient='records'))
 
     return await asyncio.gather(*[__download(timeslot) for timeslot in timeslot_chunk])  # noqa
+
+
+async def __download_parquet_file_path(guid, path, token):
+    full_path = f'{guid}/{path}'
+    async with await __get_filesystem_client(token) as filesystem_client:
+        try:
+            directory_client = filesystem_client.get_directory_client(guid)
+            await __check_directory_exist(directory_client)
+            file_download = await __download_file(full_path, filesystem_client)
+            file_content = await file_download.readall()
+
+            records = pd.read_parquet(BytesIO(file_content), engine='pyarrow')  # type: ignore
+
+            # It would be better to use records.to_dict, but pandas uses narray type which JSONResponse can't handle.
+            json_data = json.loads(records.to_json(orient='records'))
+
+            return json_data, 200
+        except ResourceNotFoundError:
+            return None, HTTPStatus.NOT_FOUND
