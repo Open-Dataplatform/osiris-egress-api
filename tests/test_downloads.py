@@ -309,6 +309,7 @@ async def test_download_parquet_files(mocker):
 
 
 def test_download_jao_eds(mocker):
+    import app.routers.downloads
     download_parquet_file_path = mocker.patch('app.routers.downloads.__download_parquet_file_path')
     download_parquet_file_path.return_value = ({'data': 'data'}, HTTPStatus.OK)
 
