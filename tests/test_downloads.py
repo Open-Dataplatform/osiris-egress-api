@@ -9,8 +9,6 @@ from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from osiris.core.enums import TimeResolution
 
-import app.routers.downloads
-
 
 def get_app():
     with patch('osiris.core.configuration.Configuration') as _:
@@ -59,6 +57,7 @@ def test_download_json(mocker):
 
 
 def test_download_jao(mocker):
+    import app.routers.downloads
     download_parquet_data = mocker.patch('app.routers.downloads.__download_parquet_data')
     download_parquet_data.return_value = ({'data': 'data'}, HTTPStatus.OK)
 
@@ -109,6 +108,7 @@ def test_download_jao(mocker):
 
 
 def test_download_neptun(mocker):
+    import app.routers.downloads
     download_parquet_data = mocker.patch('app.routers.downloads.__download_parquet_data')
     download_parquet_data.return_value = ({'data': 'data'}, HTTPStatus.OK)
 
@@ -172,6 +172,7 @@ def test_download_neptun(mocker):
 
 
 def test_download_delfin(mocker):
+    import app.routers.downloads
     download_parquet_data = mocker.patch('app.routers.downloads.__download_parquet_data')
     download_parquet_data.return_value = ({'data': 'data'}, HTTPStatus.OK)
 
