@@ -306,3 +306,20 @@ async def test_download_parquet_files(mocker):
     assert read_parquet.call_count == 2
     assert result == [[{'metric_1': 'value_1', 'metric_2': 'value_2'}],
                       [{'metric_1': 'value_1', 'metric_2': 'value_2'}]]
+
+
+def test_download_jao_eds(mocker):
+    download_parquet_file_path = mocker.patch('app.routers.downloads.__download_parquet_file_path')
+    download_parquet_file_path.return_value = ({'data': 'data'}, HTTPStatus.OK)
+
+    app.routers.downloads.config = {'JAO EDS': {'guid': 'jao_eds_guid'}}
+
+    response = client.get(
+        '/jao_eds/2021/04/D1-DE',
+        headers={'Authorization': 'secret'},
+    )
+
+    assert response.status_code == HTTPStatus.OK
+    assert download_parquet_file_path.called
+    assert download_parquet_file_path.await_args.args == ('jao_eds_guid', 'year=2021/month=04/D1-DE.parquet', 'secret')
+    assert response.json() == {'data': 'data'}
