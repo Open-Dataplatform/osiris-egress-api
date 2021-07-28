@@ -2,7 +2,6 @@
 Contains dependencies used in several places of the application.
 """
 import asyncio
-import os
 from datetime import datetime
 from http import HTTPStatus
 from typing import Optional, Union, AsyncIterable
@@ -110,20 +109,20 @@ async def __get_filepaths(path, filesystem_client) -> AsyncIterable[str]:
             yield path.name
 
 
-def __get_path_for_arbitrary_file(file_date: datetime, guid: str, filesystem_client: FileSystemClient) -> str:
-    path = f'{guid}/year={file_date.year:02d}/month={file_date.month:02d}/day={file_date.day:02d}'
-
-    try:
-        files = filesystem_client.get_paths(path=path)
-        file = files.next()
-    except ResourceNotFoundError as error:
-        message = f'({type(error).__name__}) Data doesnt exist for the given date: {error}'
-        logger.error(message)
-        raise HTTPException(status_code=error.status_code, detail=message) from error
-
-    filename = os.path.relpath(file.name, guid)  # we remove GUID from the path
-
-    return filename
+# def __get_path_for_arbitrary_file(file_date: datetime, guid: str, filesystem_client: FileSystemClient) -> str:
+#     path = f'{guid}/year={file_date.year:02d}/month={file_date.month:02d}/day={file_date.day:02d}'
+#
+#     try:
+#         files = filesystem_client.get_paths(path=path)
+#         file = files.next()
+#     except ResourceNotFoundError as error:
+#         message = f'({type(error).__name__}) Data doesnt exist for the given date: {error}'
+#         logger.error(message)
+#         raise HTTPException(status_code=error.status_code, detail=message) from error
+#
+#     filename = os.path.relpath(file.name, guid)  # we remove GUID from the path
+#
+#     return filename
 
 
 def __parse_date_arguments(from_date, to_date):

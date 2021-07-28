@@ -74,7 +74,7 @@ async def download_jao_data(horizon: str,  # pylint: disable=too-many-locals
     elif horizon.lower() == "monthly":
         guid = config['JAO']['monthly_guid']
     else:
-        message = '(ValueError) horizon value can only be Yearly or Monthly.'
+        message = '(ValueError) The horizon value can only be Yearly or Monthly.'
         logger.error(message)
         raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=message)
 
@@ -198,7 +198,7 @@ async def download_neptun_data(horizon: str,  # pylint: disable=too-many-locals
     elif horizon.lower() == 'minutely':
         guid = config['Neptun']['minutely_guid']
     else:
-        message = '(ValueError) The horizon parameter must be Daily, Hourly or Minutely'
+        message = '(ValueError) The horizon parameter must be Daily, Hourly or Minutely.'
         logger.error(message)
         raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=message)
 

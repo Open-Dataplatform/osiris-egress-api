@@ -334,7 +334,6 @@ def test_dataframe_to_table_response():
                                 ['2021-01-04T01:01:01', 'value_2', 'value_2']]}]
 
 
-@pytest.mark.asyncio
 async def test_download_files(mocker):
     from app.routers.grafana_json import __download_files
     directory_client = mocker.patch('app.routers.grafana_json.__get_directory_client')
@@ -354,7 +353,6 @@ async def test_download_files(mocker):
     assert result == ['some data', 'some data']
 
 
-@pytest.mark.asyncio
 async def test_retrieve_data(mocker):
     from app.routers.grafana_json import __retrieve_data
     directory_client = mocker.patch('app.routers.grafana_json.__get_directory_client')
