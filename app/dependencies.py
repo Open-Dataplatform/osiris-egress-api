@@ -99,6 +99,10 @@ async def __check_directory_exist(directory_client: DataLakeDirectoryClient):
         message = f'({type(error).__name__}) You do not have permission to access the dataset: {error}'
         logger.error(message)
         raise HTTPException(status_code=error.status_code, detail=message) from error
+    except HttpResponseError as error:
+        message = f'({type(error).__name__}) You do not have permission to access the dataset: {error}'
+        logger.error(message)
+        raise HTTPException(status_code=error.status_code, detail=message) from error
 
 
 async def __get_filepaths(path, filesystem_client) -> AsyncIterable[str]:
