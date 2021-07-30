@@ -55,6 +55,80 @@ async def download_json_file(guid: str,   # pylint: disable=too-many-locals
     return Response(status_code=status_code)    # No data
 
 
+@router.get('/test_dmi/', response_class=StreamingResponse)
+@Metric.histogram
+async def download_dmi_coord(lon: float,
+                             lat: float,
+                             from_date: str,
+                             to_date: Optional[str] = None,
+                             token: str = Security(access_token_header)) -> typing.Union[StreamingResponse,
+                                                                                         Response]:
+    """
+    TEST:
+    Download DMI endpoint with data from from_date to to_date (time period) for given coordinates (lon and lat)
+    If form_date is left out, current UTC time is used.
+    If to_date is left out, only one data point is retrieved.
+    """
+    logger.debug('download json data requested')
+
+    guid = config['DMI']['guid']
+
+    filters = [('lon', '=', lon), ('lat', '=', lat)]
+    result, status_code = await __download_parquet_data_raw(guid, token, from_date, to_date, filters)
+
+    if result:
+        return StreamingResponse(result, status_code=status_code)
+    return Response(status_code=status_code)    # No data
+
+
+@router.get('/test_dmi_list/', response_class=JSONResponse)
+@Metric.histogram
+async def download_dmi_list(from_date: str,
+                            token: str = Security(access_token_header)) -> typing.Union[JSONResponse, Response]:
+    """
+    TEST:
+    List all available coordinates (lon and lat) for a given date (from_date)
+    """
+    logger.debug('download json data requested')
+
+    guid = config['DMI']['guid']
+
+    from_date_obj, _, _ = __parse_date_arguments(from_date, None)
+    path = f'year={from_date_obj.year}/month={from_date_obj.month:02d}/data.parquet'
+
+    result, status_code = await __download_parquet_file_path_raw(guid, path, token)
+
+    result_df = pd.read_parquet(BytesIO(result), engine='pyarrow')
+    result_df = result_df[['lon', 'lat']].drop_duplicates()
+
+    json_response = json.loads(result_df.to_json(orient='records'))
+
+    if result:
+        return JSONResponse(json_response, status_code=status_code)
+    return Response(status_code=status_code)    # No data
+
+
+@router.get('/{guid}/test_parquets', response_class=JSONResponse)
+@Metric.histogram
+async def download_parquet_files(guid: str,   # pylint: disable=too-many-locals
+                                 from_date: Optional[str] = None,
+                                 to_date: Optional[str] = None,
+                                 token: str = Security(access_token_header)) -> typing.Union[JSONResponse, Response]:
+    """
+    TEST:
+    Download Parquet endpoint with data from from_date to to_date (time period).
+    If form_date is left out, current UTC time is used.
+    If to_date is left out, only one data point is retrieved.
+    """
+    logger.debug('download json data requested')
+
+    result, status_code = await __download_parquet_data_raw(guid, token, from_date, to_date)
+
+    if result:
+        return StreamingResponse(result, status_code=status_code)
+    return Response(status_code=status_code)    # No data
+
+
 @router.get('/jao', tags=["jao"], response_class=JSONResponse)
 @Metric.histogram
 async def download_jao_data(horizon: str,  # pylint: disable=too-many-locals
@@ -336,6 +410,105 @@ async def __download_parquet_files(timeslot_chunk: List[datetime],
         return json.loads(records.to_json(orient='records'))
 
     return await asyncio.gather(*[__download(timeslot) for timeslot in timeslot_chunk])  # noqa
+
+
+# pylint: disable=too-many-arguments
+async def __download_parquet_data_raw(guid: str,  # pylint: disable=too-many-locals
+                                      token: str,
+                                      from_date: Optional[str] = None,
+                                      to_date: Optional[str] = None,
+                                      filters: Optional[List] = None) -> Tuple[BytesIO, int]:
+
+    try:
+        from_date_obj, to_date_obj, time_resolution_enum = __parse_date_arguments(from_date, to_date)
+    except ValueError as error:
+        message = f'({type(error).__name__}) Wrong string format for date(s): {error}'
+        logger.error(message)
+        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=message) from error
+
+    with tracer.start_span('download_parquet_files') as span:
+        span.set_tag('guid', guid)
+        async with await __get_filesystem_client(token) as filesystem_client:
+            with tracer.start_span('get_directory_client', child_of=span):
+                directory_client = filesystem_client.get_directory_client(guid)
+
+            with tracer.start_span('check_directory_exists', child_of=span):
+                await __check_directory_exist(directory_client)
+
+            with tracer.start_span('retrieve_parquet_data', child_of=span) as retrieve_data_span:
+                if to_date_obj:
+                    download_dates = __get_all_dates_to_download(from_date_obj, to_date_obj, time_resolution_enum)
+                    download_dates = [item.to_pydatetime() for item in download_dates.tolist()]
+                else:
+                    download_dates = [from_date_obj]
+
+                concat_response = []
+                for chunk in __split_into_chunks(download_dates, 200):
+                    responses = await __download_parquet_files_raw(chunk, time_resolution_enum,
+                                                                   directory_client, retrieve_data_span,
+                                                                   filters)
+
+                    for response in responses:
+                        if response is not None:
+                            concat_response += [response]
+
+        status_code = 200
+        if not concat_response:
+            status_code = HTTPStatus.NO_CONTENT
+
+        # Concatenate parquet
+        if len(concat_response) == 1:
+            return BytesIO(concat_response[0]), status_code
+
+        # df_list = []
+        # with tracer.start_span('to_dataframe', child_of=span):
+        #     for reponse in concat_response:
+        #         df = pd.read_parquet(BytesIO(reponse), engine='pyarrow', filters=filters)
+        #         df_list.append(df)
+
+        with tracer.start_span('concat_dataframes', child_of=span):
+            df_concat = pd.concat(concat_response)
+            df_concat.reset_index(drop=True, inplace=True)
+
+        with tracer.start_span('to_parquet', child_of=span):
+            bytes_io_file = BytesIO()
+            df_concat.to_parquet(bytes_io_file, engine='pyarrow', compression='snappy')
+            bytes_io_file.seek(0)
+
+        return bytes_io_file, status_code
+
+
+# pylint: disable=too-many-arguments
+async def __download_parquet_files_raw(timeslot_chunk: List[datetime],
+                                       time_resolution: TimeResolution,
+                                       directory_client: DataLakeDirectoryClient,
+                                       retrieve_data_span: Span,
+                                       filters: Optional[List] = None) -> List:
+    async def __download(download_date: datetime):
+        data = await __download_data(download_date, time_resolution, directory_client,
+                                     'data.parquet', retrieve_data_span)
+
+        if data is None:
+            return None
+        if isinstance(data, str):
+            return None
+        return pd.read_parquet(BytesIO(data), engine='pyarrow', filters=filters)
+
+    return await asyncio.gather(*[__download(timeslot) for timeslot in timeslot_chunk])  # noqa
+
+
+async def __download_parquet_file_path_raw(guid, path, token):
+    full_path = f'{guid}/{path}'
+    async with await __get_filesystem_client(token) as filesystem_client:
+        try:
+            directory_client = filesystem_client.get_directory_client(guid)
+            await __check_directory_exist(directory_client)
+            file_download = await __download_file(full_path, filesystem_client)
+            file_content = await file_download.readall()
+
+            return file_content, 200
+        except ResourceNotFoundError:
+            return None, HTTPStatus.NOT_FOUND
 
 
 async def __download_parquet_file_path(guid, path, token):
