@@ -69,10 +69,6 @@ def test_search(mocker):
 
 def test_query_without_targets(mocker):
     directory_client = mocker.patch('app.routers.grafana_json.__get_directory_client')
-    get_grafana_settings = mocker.patch('app.routers.grafana_json.__get_grafana_settings')
-    retrieve_data = mocker.patch('app.routers.grafana_json.__retrieve_data')
-    filter_with_adhoc_filters = mocker.patch('app.routers.grafana_json.__filter_with_adhoc_filters')
-    dataframe_to_response = mocker.patch('app.routers.grafana_json.__dataframe_to_response')
 
     response = client.post(
         'grafana/12345/query',
