@@ -1,5 +1,6 @@
 from datetime import datetime
 from http import HTTPStatus
+from io import BytesIO
 from unittest.mock import patch
 
 import pandas as pd
@@ -324,3 +325,66 @@ def test_download_jao_eds(mocker):
     assert download_parquet_file_path.called
     assert download_parquet_file_path.await_args.args == ('jao_eds_guid', 'year=2021/month=04/D1-DE.parquet', 'secret')
     assert response.json() == {'data': 'data'}
+
+
+def test_download_dmi(mocker):
+    import app.routers.downloads
+    download_parquet_data_raw = mocker.patch('app.routers.downloads.__download_parquet_data_raw')
+    download_parquet_data_raw.return_value = (None, HTTPStatus.OK)
+
+    app.routers.downloads.config = {'DMI': {'guid': 'dmi_guid'}}
+
+    response = client.get(
+        '/dmi/',
+        headers={'Authorization': 'secret'},
+        params={'from_date': '2021-06', 'to_date': '2021-08', 'lon': 11.11, 'lat': 22.22}
+    )
+
+    filters = [('lon', '=', 11.11), ('lat', '=', 22.22)]
+    assert response.status_code == HTTPStatus.OK
+    assert download_parquet_data_raw.called
+    assert download_parquet_data_raw.await_args.args == ('dmi_guid', 'secret', '2021-06', '2021-08', filters)
+
+
+def test_download_dmi_list(mocker):
+    import app.routers.downloads
+    download_parquet_file_path_raw = mocker.patch('app.routers.downloads.__download_parquet_file_path_raw')
+
+    test_df = pd.DataFrame({'lon': [1, 2], 'lat': [2, 3]})
+    bytes_io_file = BytesIO()
+    test_df.to_parquet(bytes_io_file, engine='pyarrow', compression='snappy')
+    bytes_io_file.seek(0)
+
+    download_parquet_file_path_raw.return_value = (bytes_io_file.getvalue(), HTTPStatus.OK)
+
+    parse_date_arguments = mocker.patch('app.routers.downloads.__parse_date_arguments')
+    parse_date_arguments.return_value = datetime(2020, 1, 1), None, None
+
+    app.routers.downloads.config = {'DMI': {'guid': 'dmi_guid'}}
+
+    response = client.get(
+        '/dmi_list/',
+        headers={'Authorization': 'secret'},
+        params={'from_date': '2021-06'}
+    )
+
+    path = 'year=2020/month=01/data.parquet'
+
+    assert response.status_code == HTTPStatus.OK
+    assert download_parquet_file_path_raw.called
+    assert download_parquet_file_path_raw.await_args.args == ('dmi_guid', path, 'secret')
+
+
+def test_download_parquet(mocker):
+    download_parquet_data_raw = mocker.patch('app.routers.downloads.__download_parquet_data_raw')
+    download_parquet_data_raw.return_value = (None, HTTPStatus.OK)
+
+    response = client.get(
+        '/12345/parquet',
+        headers={'Authorization': 'secret'},
+        params={'from_date': '2021-06', 'to_date': '2021-08'}
+    )
+
+    assert response.status_code == HTTPStatus.OK
+    assert download_parquet_data_raw.called
+    assert download_parquet_data_raw.await_args.args == ('12345', 'secret', '2021-06', '2021-08')
