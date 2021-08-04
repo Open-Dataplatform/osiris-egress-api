@@ -55,7 +55,7 @@ async def download_json_file(guid: str,   # pylint: disable=too-many-locals
     return Response(status_code=status_code)    # No data
 
 
-@router.get('/test_dmi/', response_class=StreamingResponse)
+@router.get('/dmi', response_class=StreamingResponse)
 @Metric.histogram
 async def download_dmi_coord(lon: float,
                              lat: float,
@@ -64,12 +64,17 @@ async def download_dmi_coord(lon: float,
                              token: str = Security(access_token_header)) -> typing.Union[StreamingResponse,
                                                                                          Response]:
     """
-    TEST:
     Download DMI endpoint with data from from_date to to_date (time period) for given coordinates (lon and lat)
+
+    from_date: YYYY-MM
+    to_date: YYYY-MM
+    lon: <two digit float> (e.g. 15.19)
+    lat: <two digit float> (e.g. 55.00)
+
     If form_date is left out, current UTC time is used.
     If to_date is left out, only one data point is retrieved.
     """
-    logger.debug('download json data requested')
+    logger.debug('download dmi data requested')
 
     guid = config['DMI']['guid']
 
@@ -81,15 +86,16 @@ async def download_dmi_coord(lon: float,
     return Response(status_code=status_code)    # No data
 
 
-@router.get('/test_dmi_list/', response_class=JSONResponse)
+@router.get('/dmi_list', response_class=JSONResponse)
 @Metric.histogram
 async def download_dmi_list(from_date: str,
                             token: str = Security(access_token_header)) -> typing.Union[JSONResponse, Response]:
     """
-    TEST:
-    List all available coordinates (lon and lat) for a given date (from_date)
+    List all available coordinates (lon and lat) for a given date and return as json.
+
+    from_date: YYYY-MM
     """
-    logger.debug('download json data requested')
+    logger.debug('download dmi list of coord data requested')
 
     guid = config['DMI']['guid']
 
@@ -108,19 +114,21 @@ async def download_dmi_list(from_date: str,
     return Response(status_code=status_code)    # No data
 
 
-@router.get('/{guid}/test_parquets', response_class=JSONResponse)
+@router.get('/{guid}/parquet', response_class=JSONResponse)
 @Metric.histogram
 async def download_parquet_files(guid: str,   # pylint: disable=too-many-locals
-                                 from_date: Optional[str] = None,
+                                 from_date: str,
                                  to_date: Optional[str] = None,
                                  token: str = Security(access_token_header)) -> typing.Union[JSONResponse, Response]:
     """
-    TEST:
     Download Parquet endpoint with data from from_date to to_date (time period).
-    If form_date is left out, current UTC time is used.
+
+    from_date: YYYY-MM
+    to_date: YYYY-MM
+
     If to_date is left out, only one data point is retrieved.
     """
-    logger.debug('download json data requested')
+    logger.debug('download parquet data requested')
 
     result, status_code = await __download_parquet_data_raw(guid, token, from_date, to_date)
 
@@ -417,7 +425,7 @@ async def __download_parquet_data_raw(guid: str,  # pylint: disable=too-many-loc
                                       token: str,
                                       from_date: Optional[str] = None,
                                       to_date: Optional[str] = None,
-                                      filters: Optional[List] = None) -> Tuple[BytesIO, int]:
+                                      filters: Optional[List] = None) -> Tuple[Optional[BytesIO], int]:
 
     try:
         from_date_obj, to_date_obj, time_resolution_enum = __parse_date_arguments(from_date, to_date)
@@ -455,16 +463,7 @@ async def __download_parquet_data_raw(guid: str,  # pylint: disable=too-many-loc
         status_code = 200
         if not concat_response:
             status_code = HTTPStatus.NO_CONTENT
-
-        # Concatenate parquet
-        if len(concat_response) == 1:
-            return BytesIO(concat_response[0]), status_code
-
-        # df_list = []
-        # with tracer.start_span('to_dataframe', child_of=span):
-        #     for reponse in concat_response:
-        #         df = pd.read_parquet(BytesIO(reponse), engine='pyarrow', filters=filters)
-        #         df_list.append(df)
+            return None, status_code
 
         with tracer.start_span('concat_dataframes', child_of=span):
             df_concat = pd.concat(concat_response)
