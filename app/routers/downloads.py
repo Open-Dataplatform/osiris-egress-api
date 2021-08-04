@@ -55,7 +55,7 @@ async def download_json_file(guid: str,   # pylint: disable=too-many-locals
     return Response(status_code=status_code)    # No data
 
 
-@router.get('/dmi/', response_class=StreamingResponse)
+@router.get('/dmi', response_class=StreamingResponse)
 @Metric.histogram
 async def download_dmi_coord(lon: float,
                              lat: float,
@@ -86,7 +86,7 @@ async def download_dmi_coord(lon: float,
     return Response(status_code=status_code)    # No data
 
 
-@router.get('/dmi_list/', response_class=JSONResponse)
+@router.get('/dmi_list', response_class=JSONResponse)
 @Metric.histogram
 async def download_dmi_list(from_date: str,
                             token: str = Security(access_token_header)) -> typing.Union[JSONResponse, Response]:
@@ -117,7 +117,7 @@ async def download_dmi_list(from_date: str,
 @router.get('/{guid}/parquet', response_class=JSONResponse)
 @Metric.histogram
 async def download_parquet_files(guid: str,   # pylint: disable=too-many-locals
-                                 from_date: Optional[str] = None,
+                                 from_date: str,
                                  to_date: Optional[str] = None,
                                  token: str = Security(access_token_header)) -> typing.Union[JSONResponse, Response]:
     """
@@ -126,7 +126,6 @@ async def download_parquet_files(guid: str,   # pylint: disable=too-many-locals
     from_date: YYYY-MM
     to_date: YYYY-MM
 
-    If form_date is left out, current UTC time is used.
     If to_date is left out, only one data point is retrieved.
     """
     logger.debug('download parquet data requested')

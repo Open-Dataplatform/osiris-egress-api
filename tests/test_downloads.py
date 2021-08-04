@@ -335,7 +335,7 @@ def test_download_dmi(mocker):
     app.routers.downloads.config = {'DMI': {'guid': 'dmi_guid'}}
 
     response = client.get(
-        '/dmi/',
+        '/dmi',
         headers={'Authorization': 'secret'},
         params={'from_date': '2021-06', 'to_date': '2021-08', 'lon': 11.11, 'lat': 22.22}
     )
@@ -363,7 +363,7 @@ def test_download_dmi_list(mocker):
     app.routers.downloads.config = {'DMI': {'guid': 'dmi_guid'}}
 
     response = client.get(
-        '/dmi_list/',
+        '/dmi_list',
         headers={'Authorization': 'secret'},
         params={'from_date': '2021-06'}
     )
@@ -373,6 +373,7 @@ def test_download_dmi_list(mocker):
     assert response.status_code == HTTPStatus.OK
     assert download_parquet_file_path_raw.called
     assert download_parquet_file_path_raw.await_args.args == ('dmi_guid', path, 'secret')
+    assert response.json() == [{'lon': 1, 'lat': 2}, {'lon': 2, 'lat': 3}]
 
 
 def test_download_parquet(mocker):
