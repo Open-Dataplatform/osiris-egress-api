@@ -104,8 +104,8 @@ async def download_dmi_list(from_date: str,
 
     result, status_code = await __download_parquet_file_path_raw(guid, path, token)
 
-    result_df = pd.read_parquet(BytesIO(result), engine='pyarrow')
-    result_df = result_df[['lon', 'lat']].drop_duplicates()
+    result_df = pd.read_parquet(BytesIO(result), engine='pyarrow', columns=['lon', 'lat'])
+    result_df = result_df.drop_duplicates()
 
     json_response = json.loads(result_df.to_json(orient='records'))
 
