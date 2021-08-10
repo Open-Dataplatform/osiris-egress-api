@@ -437,7 +437,7 @@ async def __download_parquet_data_test(guid: str,  # pylint: disable=too-many-lo
                                        filters: Optional[List] = None) -> Tuple[Optional[List], int]:
 
     try:
-        from_date_obj, to_date_obj, time_resolution_enum = __parse_date_arguments(from_date, to_date)
+        from_date_obj, to_date_obj, _ = __parse_date_arguments(from_date, to_date)
     except ValueError as error:
         message = f'({type(error).__name__}) Wrong string format for date(s): {error}'
         logger.error(message)
@@ -479,7 +479,8 @@ async def __download_parquet_data_test(guid: str,  # pylint: disable=too-many-lo
 
         # Filter only the dates needed (we cannot do it directly in Parquet, as dates can be stored as strings)
         df_concat['_dp_datetime_utc'] = pd.to_datetime(df_concat[index])
-        df_concat = df_concat[(df_concat['_dp_datetime_utc'] >= from_date_obj) & (df_concat['_dp_datetime_utc'] < to_date_obj)]
+        df_concat = df_concat[(df_concat['_dp_datetime_utc'] >= from_date_obj)
+                              & (df_concat['_dp_datetime_utc'] < to_date_obj)]
 
         # The time stamps are kept as strings - hence, they need to be parsed to datetime to filter on them
         return json.loads(df_concat.to_json(orient='records')), status_code
