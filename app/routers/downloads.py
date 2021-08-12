@@ -58,8 +58,8 @@ async def download_json_file(guid: str,   # pylint: disable=too-many-locals
 @router.get('/{guid}/test_json', response_class=JSONResponse)
 @Metric.histogram
 async def download_json_file_range(guid: str,   # pylint: disable=too-many-locals
-                                   from_date: str,
-                                   to_date: str,
+                                   from_date: Optional[str] = None,
+                                   to_date: Optional[str] = None,
                                    token: str = Security(access_token_header)) -> typing.Union[JSONResponse, Response]:
     """
     TEST
@@ -72,12 +72,17 @@ async def download_json_file_range(guid: str,   # pylint: disable=too-many-local
         index = config['Dataset Index'][guid]
         horizon = config['Dataset Horizon'][guid]
         time_resolution = TimeResolution[horizon]
+
+        if (from_date is None or to_date is None) and time_resolution != TimeResolution.NONE:
+            message = f'Both from_date and to_date need to be set for guid {guid}'
+            return Response(message, status_code=HTTPStatus.BAD_REQUEST)
+
     except KeyError:
         message = f'The server is not configured for guid: {guid}'
         return Response(message, status_code=HTTPStatus.NOT_FOUND)
 
     # filters = [(index, '=>', from_date), ('index', '<', to_date)]
-    result, status_code = await __download_parquet_data_test(guid, token, from_date, to_date, index, time_resolution)
+    result, status_code = await __download_parquet_data_test(guid, token, index, time_resolution, from_date, to_date)
 
     if result:
         return JSONResponse(result, status_code=status_code)
@@ -430,10 +435,10 @@ async def __download_parquet_data(guid: str,  # pylint: disable=too-many-locals
 # pylint: disable=too-many-arguments
 async def __download_parquet_data_test(guid: str,  # pylint: disable=too-many-locals
                                        token: str,
-                                       from_date: str,
-                                       to_date: str,
                                        index: str,
                                        time_resolution: TimeResolution,
+                                       from_date: Optional[str] = None,
+                                       to_date: Optional[str] = None,
                                        filters: Optional[List] = None) -> Tuple[Optional[List], int]:
 
     try:
@@ -478,9 +483,10 @@ async def __download_parquet_data_test(guid: str,  # pylint: disable=too-many-lo
             df_concat.reset_index(drop=True, inplace=True)
 
         # Filter only the dates needed (we cannot do it directly in Parquet, as dates can be stored as strings)
-        df_concat['_dp_datetime_utc'] = pd.to_datetime(df_concat[index])
-        df_concat = df_concat[(df_concat['_dp_datetime_utc'] >= from_date_obj)
-                              & (df_concat['_dp_datetime_utc'] < to_date_obj)]
+        if from_date_obj is not None and to_date_obj is not None:
+            df_concat['_dp_datetime_utc'] = pd.to_datetime(df_concat[index])
+            df_concat = df_concat[(df_concat['_dp_datetime_utc'] >= from_date_obj)
+                                  & (df_concat['_dp_datetime_utc'] < to_date_obj)]
 
         # The time stamps are kept as strings - hence, they need to be parsed to datetime to filter on them
         return json.loads(df_concat.to_json(orient='records')), status_code
