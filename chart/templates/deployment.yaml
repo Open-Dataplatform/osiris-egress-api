@@ -30,6 +30,10 @@ spec:
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
         checksum/imageTag: {{ .Values.deployment.image.tag | sha256sum }}
     spec:
+      {{- with .Values.deployment.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
       - image: {{ .Values.deployment.image.repository }}:{{ .Values.deployment.image.tag }}
         name: {{ .Values.appName }}
