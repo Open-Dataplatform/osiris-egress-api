@@ -142,9 +142,9 @@ async def download_dmi_list(from_date: str,
 
         json_data = json.loads(result_df.to_json(orient='records'))
         status_code = HTTPStatus.OK
-    except HTTPException:
-        json_data = [{'ResourceNotFoundError': 'No content available for the specified parameters'}]
-        status_code = HTTPStatus.BAD_REQUEST
+    except HTTPException as exception:
+        json_data = [{'Message': exception.detail}]
+        status_code = exception.status_code
 
     return JSONResponse(json_data, status_code=status_code)
 
@@ -226,9 +226,9 @@ async def download_jao_eds_data(year: int,
         # It would be better to use records.to_dict, but pandas uses narray type which JSONResponse can't handle.
         json_data = json.loads(records.to_json(orient='records'))
         status_code = HTTPStatus.OK
-    except HTTPException:
-        json_data = [{'ResourceNotFoundError': 'No content available for the specified parameters'}]
-        status_code = HTTPStatus.BAD_REQUEST
+    except HTTPException as exception:
+        json_data = [{'Message': exception.detail}]
+        status_code = exception.status_code
 
     return JSONResponse(json_data, status_code=status_code)
 
