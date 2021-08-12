@@ -9,7 +9,6 @@ from http import HTTPStatus
 from io import BytesIO
 from typing import Optional, Tuple, List
 import pandas as pd
-from azure.core.exceptions import ResourceNotFoundError
 
 from azure.storage.filedatalake.aio import DataLakeDirectoryClient
 from fastapi import APIRouter, HTTPException, Security
@@ -19,7 +18,7 @@ from osiris.core.configuration import Configuration
 from osiris.core.enums import TimeResolution
 from jaeger_client import Span
 
-from ..dependencies import (__download_file, __check_directory_exist, __get_filesystem_client,
+from ..dependencies import (__check_directory_exist, __get_filesystem_client,
                             __download_blob_to_stream, __split_into_chunks,
                             __get_all_dates_to_download, __parse_date_arguments, __download_data)
 from ..metrics import TracerClass, Metric
@@ -69,8 +68,9 @@ async def download_json_file_range(guid: str,   # pylint: disable=too-many-local
     logger.debug('download json data requested')
 
     try:
-        index = config['Dataset Index'][guid]
-        horizon = config['Dataset Horizon'][guid]
+        guid_config = json.loads(config['Dataset Config'][guid])
+        index = guid_config['index']
+        horizon = guid_config['horizon']
         time_resolution = TimeResolution[horizon]
 
         if (from_date is None or to_date is None) and time_resolution != TimeResolution.NONE:
@@ -81,7 +81,6 @@ async def download_json_file_range(guid: str,   # pylint: disable=too-many-local
         message = f'The server is not configured for guid: {guid}'
         return Response(message, status_code=HTTPStatus.NOT_FOUND)
 
-    # filters = [(index, '=>', from_date), ('index', '<', to_date)]
     result, status_code = await __download_parquet_data_test(guid, token, index, time_resolution, from_date, to_date)
 
     if result:
@@ -134,18 +133,20 @@ async def download_dmi_list(from_date: str,
     guid = config['DMI']['guid']
 
     from_date_obj, _, _ = __parse_date_arguments(from_date, None)
-    path = f'year={from_date_obj.year}/month={from_date_obj.month:02d}/data.parquet'
+    blob_name = f'{guid}/year={from_date_obj.year}/month={from_date_obj.month:02d}/data.parquet'
+    try:
+        byte_stream = await __download_blob_to_stream(blob_name, token)
 
-    result, status_code = await __download_parquet_file_path_raw(guid, path, token)
+        result_df = pd.read_parquet(byte_stream, engine='pyarrow', columns=['lon', 'lat'])
+        result_df = result_df.drop_duplicates()
 
-    result_df = pd.read_parquet(BytesIO(result), engine='pyarrow', columns=['lon', 'lat'])
-    result_df = result_df.drop_duplicates()
+        json_data = json.loads(result_df.to_json(orient='records'))
+        status_code = HTTPStatus.OK
+    except HTTPException:
+        json_data = [{'ResourceNotFoundError': 'No content available for the specified parameters'}]
+        status_code = HTTPStatus.BAD_REQUEST
 
-    json_response = json.loads(result_df.to_json(orient='records'))
-
-    if result:
-        return JSONResponse(json_response, status_code=status_code)
-    return Response(status_code=status_code)    # No data
+    return JSONResponse(json_data, status_code=status_code)
 
 
 @router.get('/{guid}/parquet', response_class=JSONResponse)
@@ -202,13 +203,12 @@ async def download_jao_data(horizon: str,  # pylint: disable=too-many-locals
     return Response(status_code=status_code)   # No data
 
 
-@router.get('/jao_eds/{year}/{month}/{border}', tags=["jao_eds"], response_class=StreamingResponse)
+@router.get('/jao_eds/{year}/{month}/{border}', tags=["jao_eds"], response_class=JSONResponse)
 @Metric.histogram
 async def download_jao_eds_data(year: int,
                                 month: int,
                                 border: str,
-                                token: str = Security(access_token_header)) -> typing.Union[StreamingResponse,
-                                                                                            Response]:
+                                token: str = Security(access_token_header)) -> JSONResponse:
     """
     Download JAO EDS calculations for a specific year, month, and border.
 
@@ -216,14 +216,21 @@ async def download_jao_eds_data(year: int,
     Returns the content in parquet format.
     """
     guid = config['JAO EDS']['guid']
-    path = f'year={year}/month={month:02d}/{border}.parquet'
+    blob_name = f'{guid}/year={year}/month={month:02d}/{border}.parquet'
 
-    json_data, status_code = await __download_parquet_file_path(guid, path, token)
+    try:
+        byte_stream = await __download_blob_to_stream(blob_name, token)
 
-    if json_data:
-        return JSONResponse(json_data, status_code=status_code)
+        records = pd.read_parquet(byte_stream, engine='pyarrow')  # type: ignore
 
-    return Response(status_code=status_code)   # No data
+        # It would be better to use records.to_dict, but pandas uses narray type which JSONResponse can't handle.
+        json_data = json.loads(records.to_json(orient='records'))
+        status_code = HTTPStatus.OK
+    except HTTPException:
+        json_data = [{'ResourceNotFoundError': 'No content available for the specified parameters'}]
+        status_code = HTTPStatus.BAD_REQUEST
+
+    return JSONResponse(json_data, status_code=status_code)
 
 
 @router.get('/neptun', tags=["neptun"], response_class=JSONResponse)
@@ -532,36 +539,3 @@ async def __download_parquet_files_raw(timeslot_chunk: List[datetime],
         return records
 
     return await asyncio.gather(*[__download(timeslot) for timeslot in timeslot_chunk])  # noqa
-
-
-async def __download_parquet_file_path_raw(guid, path, token):
-    full_path = f'{guid}/{path}'
-    async with await __get_filesystem_client(token) as filesystem_client:
-        try:
-            directory_client = filesystem_client.get_directory_client(guid)
-            await __check_directory_exist(directory_client)
-            file_download = await __download_file(full_path, filesystem_client)
-            file_content = await file_download.readall()
-
-            return file_content, 200
-        except ResourceNotFoundError:
-            return None, HTTPStatus.NOT_FOUND
-
-
-async def __download_parquet_file_path(guid, path, token):
-    full_path = f'{guid}/{path}'
-    async with await __get_filesystem_client(token) as filesystem_client:
-        try:
-            directory_client = filesystem_client.get_directory_client(guid)
-            await __check_directory_exist(directory_client)
-            file_download = await __download_file(full_path, filesystem_client)
-            file_content = await file_download.readall()
-
-            records = pd.read_parquet(BytesIO(file_content), engine='pyarrow')  # type: ignore
-
-            # It would be better to use records.to_dict, but pandas uses narray type which JSONResponse can't handle.
-            json_data = json.loads(records.to_json(orient='records'))
-
-            return json_data, 200
-        except ResourceNotFoundError:
-            return None, HTTPStatus.NOT_FOUND
