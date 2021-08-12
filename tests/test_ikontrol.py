@@ -6,13 +6,13 @@ from tests.test_main import client
 
 @pytest.fixture()
 def mock_get_filesystem_client(mocker):
-    mock = mocker.patch('app.routers.downloads.__get_filesystem_client')
+    mock = mocker.patch('app.routers.ikontrol.__get_filesystem_client')
     return mock
 
 
 @pytest.fixture()
 def mock_get_file_stream_for_ikontrol_file(mocker):
-    mock = mocker.patch('app.routers.downloads.__get_file_stream_for_ikontrol_file')
+    mock = mocker.patch('app.routers.ikontrol.__get_file_stream_for_ikontrol_file')
     return mock
 
 

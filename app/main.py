@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from osiris.core.configuration import Configuration
 from starlette_exporter import PrometheusMiddleware, handle_metrics
 
-from .routers import downloads, grafana_json, oilcable
+from .routers import downloads, grafana_json, oilcable, ikontrol
 
 configuration = Configuration(__file__)
 config = configuration.get_config()
@@ -38,6 +38,7 @@ app.add_middleware(
 app.add_route('/metrics', handle_metrics)
 app.include_router(grafana_json.router)
 app.include_router(downloads.router)
+app.include_router(ikontrol.router)
 app.include_router(oilcable.router)
 
 
