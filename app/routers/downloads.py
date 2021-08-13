@@ -299,6 +299,46 @@ async def download_neptun_data(horizon: str,  # pylint: disable=too-many-locals
     return Response(status_code=status_code)    # No data
 
 
+@router.get('/v1/neptun', tags=["neptun"], response_class=JSONResponse)
+@Metric.histogram
+async def download_neptun_data_v1(horizon: str,  # pylint: disable=too-many-locals
+                                  from_date: str,
+                                  to_date: str,
+                                  tags: str = '',
+                                  token: str = Security(access_token_header)) -> typing.Union[JSONResponse, Response]:
+    """
+    Download Neptun data from from_date to to_date (time period).
+
+    The horizon parameter must be set to Daily, Hourly or Minutely depending on what dataset you want data from:
+
+    The tags parameter is a list of tags (comma-separated string) which can be used to filter the data based on
+    the Tag column.
+    """
+    logger.debug('download Neptun data requested')
+
+    if horizon.lower() == 'daily':
+        guid = config['Neptun']['daily_guid']
+    elif horizon.lower() == 'hourly':
+        guid = config['Neptun']['hourly_guid']
+    elif horizon.lower() == 'minutely':
+        guid = config['Neptun']['minutely_guid']
+    else:
+        message = '(ValueError) The horizon parameter must be Daily, Hourly or Minutely.'
+        logger.error(message)
+        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=message)
+
+    # create filter. The outer list is OR and the inner list is AND.
+    tag_filters = [[('Tag', '=', tag)] for tag in tags.split(',')] if tags else None
+
+    index, time_resolution = __get_guid_config(guid, from_date, to_date)
+    events, status_code = await __download_parquet_data_v1(guid, token, index, time_resolution,
+                                                           from_date, to_date, tag_filters)
+
+    if events is not None:
+        return JSONResponse(__dataframe_to_json(events), status_code=status_code)
+    return Response(status_code=status_code)    # No data
+
+
 @router.get('/delfin', tags=["delfin"], response_class=JSONResponse)
 @Metric.histogram
 async def download_delfin_data(horizon: str,  # pylint: disable=too-many-locals
@@ -341,6 +381,47 @@ async def download_delfin_data(horizon: str,  # pylint: disable=too-many-locals
 
     if events:
         return JSONResponse(events, status_code=status_code)
+    return Response(status_code=status_code)    # No data
+
+
+@router.get('/v1/delfin', tags=["delfin"], response_class=JSONResponse)
+@Metric.histogram
+async def download_delfin_data_v1(horizon: str,  # pylint: disable=too-many-locals
+                                  from_date: str,
+                                  to_date: str,
+                                  table_indices: str = '',
+                                  token: str = Security(access_token_header)) -> typing.Union[JSONResponse, Response]:
+    """
+    Download Delfin data from from_date to to_date (time period).
+
+    The horizon parameter must be set to Daily, Hourly or Minutely depending on what dataset you want data from:
+
+    The table_indices parameter is a list of tags (comma-separated string) which can be used to filter the data based on
+    the TABLE_INDEX column.
+    """
+    logger.debug('download delfin data requested')
+
+    if horizon.lower() == 'daily':
+        guid = config['Delfin']['daily_guid']
+    elif horizon.lower() == 'hourly':
+        guid = config['Delfin']['hourly_guid']
+    elif horizon.lower() == 'minutely':
+        guid = config['Delfin']['minutely_guid']
+    else:
+        message = '(ValueError) The horizon parameter must be Daily, Hourly or Minutely.'
+        logger.error(message)
+        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=message)
+
+    # create filter. The outer list is OR and the inner list is AND.
+    table_indices_filters = [[('TABLE_INDEX', '=', index)] for index in table_indices.split(',')] if table_indices \
+        else None
+
+    index, time_resolution = __get_guid_config(guid, from_date, to_date)
+    events, status_code = await __download_parquet_data_v1(guid, token, index, time_resolution,
+                                                           from_date, to_date, table_indices_filters)
+
+    if events is not None:
+        return JSONResponse(__dataframe_to_json(events), status_code=status_code)
     return Response(status_code=status_code)    # No data
 
 
