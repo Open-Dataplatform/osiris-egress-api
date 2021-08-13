@@ -27,7 +27,8 @@ access_token_header = APIKeyHeader(name="Authorization", auto_error=True)
 router = APIRouter(tags=["oilcable"])
 
 
-@router.get("/oilcable/leak/{cable_id}", response_class=JSONResponse)
+@router.get("/oilcable/leak/{cable_id}", response_class=JSONResponse, deprecated=True)
+@router.get("/v1/oilcable/leak/{cable_id}", response_class=JSONResponse)
 @Metric.histogram
 async def get_leak_cable_id(
     cable_id: str,
@@ -51,7 +52,8 @@ async def get_leak_cable_id(
     return JSONResponse(json_data)
 
 
-@router.get("/oilcable/leak", response_class=JSONResponse)
+@router.get("/oilcable/leak", response_class=JSONResponse, deprecated=True)
+@router.get("/v1/oilcable/leak", response_class=JSONResponse)
 @Metric.histogram
 async def get_leak_cable(
     from_date: Optional[str] = None,
@@ -77,7 +79,8 @@ async def get_leak_cable(
     return JSONResponse(json_data)
 
 
-@router.get("/oilcable/daily", response_class=JSONResponse)
+@router.get("/oilcable/daily", response_class=JSONResponse, deprecated=True)
+@router.get("/v1/oilcable/daily", response_class=JSONResponse)
 @Metric.histogram
 async def get_leak_cable_daily(
     from_date: Optional[str] = None,

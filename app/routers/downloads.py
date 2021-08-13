@@ -34,7 +34,7 @@ router = APIRouter(tags=['downloads'])
 tracer = TracerClass().get_tracer()
 
 
-@router.get('/{guid}/json', response_class=JSONResponse)
+@router.get('/{guid}/json', response_class=JSONResponse, deprecated=True)
 @Metric.histogram
 async def download_json_file(guid: str,   # pylint: disable=too-many-locals
                              from_date: Optional[str] = None,
@@ -55,7 +55,7 @@ async def download_json_file(guid: str,   # pylint: disable=too-many-locals
 
 
 @router.get('/v1/{guid}/json', response_class=JSONResponse)
-@router.get('/{guid}/test_json', response_class=JSONResponse)
+@router.get('/{guid}/test_json', response_class=JSONResponse, deprecated=True)
 @Metric.histogram
 async def download_json_file_range(guid: str,   # pylint: disable=too-many-locals
                                    from_date: Optional[str] = None,
@@ -77,7 +77,7 @@ async def download_json_file_range(guid: str,   # pylint: disable=too-many-local
     return Response(status_code=status_code)    # No data
 
 
-@router.get('/dmi', response_class=StreamingResponse)
+@router.get('/dmi', response_class=StreamingResponse, deprecated=True)
 @router.get('/v1/dmi', response_class=StreamingResponse)
 @Metric.histogram
 async def download_dmi_coord(lon: float,
@@ -107,7 +107,7 @@ async def download_dmi_coord(lon: float,
     return Response(status_code=status_code)    # No data
 
 
-@router.get('/dmi_list', response_class=JSONResponse)
+@router.get('/dmi_list', response_class=JSONResponse, deprecated=True)
 @router.get('/v1/dmi_list', response_class=JSONResponse)
 @Metric.histogram
 async def download_dmi_list(from_date: str,
@@ -138,12 +138,13 @@ async def download_dmi_list(from_date: str,
     return JSONResponse(json_data, status_code=status_code)
 
 
-@router.get('/v1/{guid}/parquet', response_class=JSONResponse)
+@router.get('/v1/{guid}/parquet', response_class=StreamingResponse)
 @Metric.histogram
 async def download_parquet_files(guid: str,   # pylint: disable=too-many-locals
                                  from_date: Optional[str] = None,
                                  to_date: Optional[str] = None,
-                                 token: str = Security(access_token_header)) -> typing.Union[JSONResponse, Response]:
+                                 token: str = Security(access_token_header)) -> typing.Union[StreamingResponse,
+                                                                                             Response]:
     """
     Download Parquet endpoint with data from from_date to to_date (time period).
 
@@ -159,7 +160,7 @@ async def download_parquet_files(guid: str,   # pylint: disable=too-many-locals
     return Response(status_code=status_code)    # No data
 
 
-@router.get('/jao', tags=["jao"], response_class=JSONResponse)
+@router.get('/jao', tags=["jao"], response_class=JSONResponse, deprecated=True)
 @Metric.histogram
 async def download_jao_data(horizon: str,  # pylint: disable=too-many-locals
                             from_date: Optional[str] = None,
@@ -252,7 +253,7 @@ async def download_jao_eds_data(year: int,
     return JSONResponse(json_data, status_code=status_code)
 
 
-@router.get('/neptun', tags=["neptun"], response_class=JSONResponse)
+@router.get('/neptun', tags=["neptun"], response_class=JSONResponse, deprecated=True)
 @Metric.histogram
 async def download_neptun_data(horizon: str,  # pylint: disable=too-many-locals
                                from_date: Optional[str] = None,
@@ -338,7 +339,7 @@ async def download_neptun_data_v1(horizon: str,  # pylint: disable=too-many-loca
     return Response(status_code=status_code)    # No data
 
 
-@router.get('/delfin', tags=["delfin"], response_class=JSONResponse)
+@router.get('/delfin', tags=["delfin"], response_class=JSONResponse, deprecated=True)
 @Metric.histogram
 async def download_delfin_data(horizon: str,  # pylint: disable=too-many-locals
                                from_date: Optional[str] = None,
@@ -427,7 +428,7 @@ async def download_delfin_data_v1(horizon: str,  # pylint: disable=too-many-loca
 
 
 @router.get("/v1/download", response_class=StreamingResponse)
-@router.get("/download", response_class=StreamingResponse)
+@router.get("/download", response_class=StreamingResponse, deprecated=True)
 @Metric.histogram
 async def download_file(
     blob_name: str, token: str = Security(access_token_header)

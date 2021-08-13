@@ -21,7 +21,8 @@ access_token_header = APIKeyHeader(name='Authorization', auto_error=True)
 router = APIRouter(tags=['downloads'])
 
 
-@router.get('/ikontrol/getallprojects', response_class=StreamingResponse)
+@router.get('/ikontrol/getallprojects', response_class=StreamingResponse, deprecated=True)
+@router.get('/v1/ikontrol/getallprojects', response_class=StreamingResponse)
 @Metric.histogram
 async def download_ikontrol_project_ids(token: str = Security(access_token_header)) -> StreamingResponse:
     """
@@ -36,7 +37,8 @@ async def download_ikontrol_project_ids(token: str = Security(access_token_heade
         return StreamingResponse(stream, media_type='application/json')
 
 
-@router.get('/ikontrol/{project_id}', tags=["ikontrol"], response_class=StreamingResponse)
+@router.get('/ikontrol/{project_id}', tags=["ikontrol"], response_class=StreamingResponse, deprecated=True)
+@router.get('/v1/ikontrol/{project_id}', tags=["ikontrol"], response_class=StreamingResponse)
 @Metric.histogram
 async def download_ikontrol_data(project_id: int, token: str = Security(access_token_header)) -> StreamingResponse:
     """
@@ -51,7 +53,8 @@ async def download_ikontrol_data(project_id: int, token: str = Security(access_t
         return StreamingResponse(stream, media_type='application/json')
 
 
-@router.get('/ikontrol/getzip/{project_id}', tags=["ikontrol"], response_class=StreamingResponse)
+@router.get('/ikontrol/getzip/{project_id}', tags=["ikontrol"], response_class=StreamingResponse, deprecated=True)
+@router.get('/v1/ikontrol/getzip/{project_id}', tags=["ikontrol"], response_class=StreamingResponse)
 @Metric.histogram
 async def download_ikontrol_zip(project_id: int, token: str = Security(access_token_header)) -> StreamingResponse:
     """

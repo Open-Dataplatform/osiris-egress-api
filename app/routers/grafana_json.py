@@ -38,7 +38,8 @@ router = APIRouter(tags=['grafana'])
 tracer = TracerClass().get_tracer()
 
 
-@router.get('/grafana/{guid}')
+@router.get('/grafana/{guid}', deprecated=True)
+@router.get('/v1/grafana/{guid}')
 @Metric.histogram
 async def test_connection(guid: str, client_id: str = Header(None), client_secret: str = Header(None)) -> JSONResponse:
     """
@@ -61,7 +62,8 @@ async def test_connection(guid: str, client_id: str = Header(None), client_secre
     return JSONResponse(content={'message': 'Grafana datasource used for timeseries data.'}, status_code=HTTPStatus.OK)
 
 
-@router.post('/grafana/{guid}/search')
+@router.post('/grafana/{guid}/search', deprecated=True)
+@router.post('/v1/grafana/{guid}/search')
 @Metric.histogram
 async def search(guid: str, client_id: str = Header(None), client_secret: str = Header(None)) -> JSONResponse:
     """
@@ -83,7 +85,8 @@ async def search(guid: str, client_id: str = Header(None), client_secret: str = 
         return JSONResponse(content=metrics, status_code=HTTPStatus.OK)
 
 
-@router.post('/grafana/{guid}/query')
+@router.post('/grafana/{guid}/query', deprecated=True)
+@router.post('/v1/grafana/{guid}/query')
 @Metric.histogram
 async def query(guid: str, request: QueryRequest,
                 client_id: str = Header(None), client_secret: str = Header(None)) -> JSONResponse:
@@ -131,7 +134,8 @@ async def query(guid: str, request: QueryRequest,
         return JSONResponse(content=results, status_code=HTTPStatus.OK)
 
 
-@router.post('/grafana/{guid}/annotations')
+@router.post('/grafana/{guid}/annotations', deprecated=True)
+@router.post('/v1/grafana/{guid}/annotations')
 @Metric.histogram
 async def annotation(guid: str, client_id: str = Header(None),  # pylint: disable=unused-argument
                      client_secret: str = Header(None)) -> JSONResponse:  # pylint: disable=unused-argument
@@ -143,7 +147,8 @@ async def annotation(guid: str, client_id: str = Header(None),  # pylint: disabl
     return JSONResponse(content=[], status_code=HTTPStatus.OK)
 
 
-@router.post('/grafana/{guid}/tag-keys')
+@router.post('/grafana/{guid}/tag-keys', deprecated=True)
+@router.post('/v1/grafana/{guid}/tag-keys')
 @Metric.histogram
 async def tag_keys(guid: str, client_id: str = Header(None), client_secret: str = Header(None)) -> JSONResponse:
     """
@@ -158,7 +163,8 @@ async def tag_keys(guid: str, client_id: str = Header(None), client_secret: str 
     return JSONResponse(content=grafana_settings['tag_keys'], status_code=HTTPStatus.OK)
 
 
-@router.post('/grafana/{guid}/tag-values')
+@router.post('/grafana/{guid}/tag-values', deprecated=True)
+@router.post('/v1/grafana/{guid}/tag-values')
 @Metric.histogram
 async def tag_values(guid: str, request: TagValuesRequest,
                      client_id: str = Header(None), client_secret: str = Header(None)) -> JSONResponse:
