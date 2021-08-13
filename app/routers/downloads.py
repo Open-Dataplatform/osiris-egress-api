@@ -63,6 +63,8 @@ async def download_json_file_range(guid: str,   # pylint: disable=too-many-local
                                    token: str = Security(access_token_header)) -> typing.Union[JSONResponse, Response]:
     """
     Download JSON endpoint with data from from_date to to_date (time period).
+
+    The from_date and to_data need to be same format: {year}, {year}-{month}, ..., {year}-{month}-{day}T{hour}:{minute}
     """
     logger.debug('download json data requested')
 
@@ -87,13 +89,9 @@ async def download_dmi_coord(lon: float,
     """
     Download DMI endpoint with data from from_date to to_date (time period) for given coordinates (lon and lat)
 
-    from_date: YYYY-MM
-    to_date: YYYY-MM
+    The from_date and to_data need to be same format: {year}, {year}-{month}, ..., {year}-{month}-{day}T{hour}:{minute}
     lon: <two digit float> (e.g. 15.19)
     lat: <two digit float> (e.g. 55.00)
-
-    If form_date is left out, current UTC time is used.
-    If to_date is left out, only one data point is retrieved.
     """
     logger.debug('download dmi data requested')
 
@@ -149,10 +147,7 @@ async def download_parquet_files(guid: str,   # pylint: disable=too-many-locals
     """
     Download Parquet endpoint with data from from_date to to_date (time period).
 
-    from_date: YYYY-MM
-    to_date: YYYY-MM
-
-    If to_date is left out, only one data point is retrieved.
+    The from_date and to_data need to be same format: {year}, {year}-{month}, ..., {year}-{month}-{day}T{hour}:{minute}
     """
     logger.debug('download parquet data requested')
 
@@ -203,6 +198,8 @@ async def download_jao_data_v1(horizon: str,  # pylint: disable=too-many-locals
                                token: str = Security(access_token_header)) -> typing.Union[JSONResponse, Response]:
     """
     Download JAO data from from_date to to_date (time period).
+
+    The from_date and to_data need to be same format: {year}, {year}-{month}, ..., {year}-{month}-{day}T{hour}:{minute}
 
     The horizon parameter must be set to Yearly or Monthly depending on what dataset you want data from.
     """
@@ -309,6 +306,8 @@ async def download_neptun_data_v1(horizon: str,  # pylint: disable=too-many-loca
     """
     Download Neptun data from from_date to to_date (time period).
 
+    The from_date and to_data need to be same format: {year}, {year}-{month}, ..., {year}-{month}-{day}T{hour}:{minute}
+
     The horizon parameter must be set to Daily, Hourly or Minutely depending on what dataset you want data from:
 
     The tags parameter is a list of tags (comma-separated string) which can be used to filter the data based on
@@ -393,6 +392,8 @@ async def download_delfin_data_v1(horizon: str,  # pylint: disable=too-many-loca
                                   token: str = Security(access_token_header)) -> typing.Union[JSONResponse, Response]:
     """
     Download Delfin data from from_date to to_date (time period).
+
+    The from_date and to_data need to be same format: {year}, {year}-{month}, ..., {year}-{month}-{day}T{hour}:{minute}
 
     The horizon parameter must be set to Daily, Hourly or Minutely depending on what dataset you want data from:
 
