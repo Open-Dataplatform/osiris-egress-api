@@ -334,21 +334,24 @@ def test_download_jao_eds(mocker):
 
 def test_download_dmi(mocker):
     import app.routers.downloads
-    download_parquet_data_raw = mocker.patch('app.routers.downloads.__download_parquet_data_raw')
-    download_parquet_data_raw.return_value = (None, HTTPStatus.OK)
+    download_parquet_data_v1 = mocker.patch('app.routers.downloads.__download_parquet_data_v1')
+    download_parquet_data_v1.return_value = (None, HTTPStatus.OK)
+    get_guid_config = mocker.patch('app.routers.downloads.__get_guid_config')
+    get_guid_config.return_value = 'INDEX', 'HORIZON'
 
     app.routers.downloads.config = {'DMI': {'guid': 'dmi_guid'}}
 
     response = client.get(
-        '/dmi',
+        '/v1/dmi',
         headers={'Authorization': 'secret'},
         params={'from_date': '2021-06', 'to_date': '2021-08', 'lon': 11.11, 'lat': 22.22}
     )
 
     filters = [('lon', '=', 11.11), ('lat', '=', 22.22)]
     assert response.status_code == HTTPStatus.OK
-    assert download_parquet_data_raw.called
-    assert download_parquet_data_raw.await_args.args == ('dmi_guid', 'secret', '2021-06', '2021-08', filters)
+    assert download_parquet_data_v1.called
+    assert download_parquet_data_v1.await_args.args == ('dmi_guid', 'secret', 'INDEX', 'HORIZON',
+                                                        '2021-06', '2021-08', filters)
 
 
 def test_download_dmi_list(mocker):
@@ -368,7 +371,7 @@ def test_download_dmi_list(mocker):
     app.routers.downloads.config = {'DMI': {'guid': 'dmi_guid'}}
 
     response = client.get(
-        '/dmi_list',
+        '/v1/dmi_list',
         headers={'Authorization': 'secret'},
         params={'from_date': '2021-06'}
     )
@@ -382,15 +385,17 @@ def test_download_dmi_list(mocker):
 
 
 def test_download_parquet(mocker):
-    download_parquet_data_raw = mocker.patch('app.routers.downloads.__download_parquet_data_raw')
-    download_parquet_data_raw.return_value = (None, HTTPStatus.OK)
+    download_parquet_data_v1 = mocker.patch('app.routers.downloads.__download_parquet_data_v1')
+    download_parquet_data_v1.return_value = (None, HTTPStatus.OK)
+    get_guid_config = mocker.patch('app.routers.downloads.__get_guid_config')
+    get_guid_config.return_value = 'INDEX', 'HORIZON'
 
     response = client.get(
-        '/12345/parquet',
+        '/v1/12345/parquet',
         headers={'Authorization': 'secret'},
         params={'from_date': '2021-06', 'to_date': '2021-08'}
     )
 
     assert response.status_code == HTTPStatus.OK
-    assert download_parquet_data_raw.called
-    assert download_parquet_data_raw.await_args.args == ('12345', 'secret', '2021-06', '2021-08')
+    assert download_parquet_data_v1.called
+    assert download_parquet_data_v1.await_args.args == ('12345', 'secret', 'INDEX', 'HORIZON', '2021-06', '2021-08')

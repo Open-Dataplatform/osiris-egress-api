@@ -54,6 +54,7 @@ async def download_json_file(guid: str,   # pylint: disable=too-many-locals
     return Response(status_code=status_code)    # No data
 
 
+@router.get('/v1/{guid}/json', response_class=JSONResponse)
 @router.get('/{guid}/test_json', response_class=JSONResponse)
 @Metric.histogram
 async def download_json_file_range(guid: str,   # pylint: disable=too-many-locals
@@ -61,39 +62,26 @@ async def download_json_file_range(guid: str,   # pylint: disable=too-many-local
                                    to_date: Optional[str] = None,
                                    token: str = Security(access_token_header)) -> typing.Union[JSONResponse, Response]:
     """
-    TEST
-
     Download JSON endpoint with data from from_date to to_date (time period).
     """
     logger.debug('download json data requested')
 
-    try:
-        guid_config = json.loads(config['Dataset Config'][guid])
-        index = guid_config['index']
-        horizon = guid_config['horizon']
-        time_resolution = TimeResolution[horizon]
+    index, time_resolution = __get_guid_config(guid, from_date, to_date)
 
-        if (from_date is None or to_date is None) and time_resolution != TimeResolution.NONE:
-            message = f'Both from_date and to_date need to be set for guid {guid}'
-            return Response(message, status_code=HTTPStatus.BAD_REQUEST)
+    result, status_code = await __download_parquet_data_v1(guid, token, index, time_resolution, from_date, to_date)
 
-    except KeyError:
-        message = f'The server is not configured for guid: {guid}'
-        return Response(message, status_code=HTTPStatus.NOT_FOUND)
-
-    result, status_code = await __download_parquet_data_test(guid, token, index, time_resolution, from_date, to_date)
-
-    if result:
-        return JSONResponse(result, status_code=status_code)
+    if result is not None:
+        return JSONResponse(__dataframe_to_json(result), status_code=status_code)
     return Response(status_code=status_code)    # No data
 
 
 @router.get('/dmi', response_class=StreamingResponse)
+@router.get('/v1/dmi', response_class=StreamingResponse)
 @Metric.histogram
 async def download_dmi_coord(lon: float,
                              lat: float,
                              from_date: str,
-                             to_date: Optional[str] = None,
+                             to_date: Optional[str],
                              token: str = Security(access_token_header)) -> typing.Union[StreamingResponse,
                                                                                          Response]:
     """
@@ -110,16 +98,19 @@ async def download_dmi_coord(lon: float,
     logger.debug('download dmi data requested')
 
     guid = config['DMI']['guid']
+    index, time_resolution = __get_guid_config(guid, from_date, to_date)
 
     filters = [('lon', '=', lon), ('lat', '=', lat)]
-    result, status_code = await __download_parquet_data_raw(guid, token, from_date, to_date, filters)
+    result, status_code = await __download_parquet_data_v1(guid, token, index,
+                                                           time_resolution, from_date, to_date, filters)
 
-    if result:
-        return StreamingResponse(result, status_code=status_code)
+    if result is not None:
+        return StreamingResponse(__dataframe_to_parquet(result), status_code=status_code)
     return Response(status_code=status_code)    # No data
 
 
 @router.get('/dmi_list', response_class=JSONResponse)
+@router.get('/v1/dmi_list', response_class=JSONResponse)
 @Metric.histogram
 async def download_dmi_list(from_date: str,
                             token: str = Security(access_token_header)) -> typing.Union[JSONResponse, Response]:
@@ -149,10 +140,10 @@ async def download_dmi_list(from_date: str,
     return JSONResponse(json_data, status_code=status_code)
 
 
-@router.get('/{guid}/parquet', response_class=JSONResponse)
+@router.get('/v1/{guid}/parquet', response_class=JSONResponse)
 @Metric.histogram
 async def download_parquet_files(guid: str,   # pylint: disable=too-many-locals
-                                 from_date: str,
+                                 from_date: Optional[str] = None,
                                  to_date: Optional[str] = None,
                                  token: str = Security(access_token_header)) -> typing.Union[JSONResponse, Response]:
     """
@@ -165,10 +156,11 @@ async def download_parquet_files(guid: str,   # pylint: disable=too-many-locals
     """
     logger.debug('download parquet data requested')
 
-    result, status_code = await __download_parquet_data_raw(guid, token, from_date, to_date)
+    index, time_resolution = __get_guid_config(guid, from_date, to_date)
+    result, status_code = await __download_parquet_data_v1(guid, token, index, time_resolution, from_date, to_date)
 
-    if result:
-        return StreamingResponse(result, status_code=status_code)
+    if result is not None:
+        return StreamingResponse(__dataframe_to_parquet(result), status_code=status_code)
     return Response(status_code=status_code)    # No data
 
 
@@ -322,6 +314,7 @@ async def download_delfin_data(horizon: str,  # pylint: disable=too-many-locals
     return Response(status_code=status_code)    # No data
 
 
+@router.get("/v1/download", response_class=StreamingResponse)
 @router.get("/download", response_class=StreamingResponse)
 @Metric.histogram
 async def download_file(
@@ -382,13 +375,13 @@ async def __download_parquet_data(guid: str,  # pylint: disable=too-many-locals
 
 
 # pylint: disable=too-many-arguments
-async def __download_parquet_data_test(guid: str,  # pylint: disable=too-many-locals
-                                       token: str,
-                                       index: str,
-                                       time_resolution: TimeResolution,
-                                       from_date: Optional[str] = None,
-                                       to_date: Optional[str] = None,
-                                       filters: Optional[List] = None) -> Tuple[Optional[List], int]:
+async def __download_parquet_data_v1(guid: str,  # pylint: disable=too-many-locals
+                                     token: str,
+                                     index: str,
+                                     time_resolution: TimeResolution,
+                                     from_date: Optional[str] = None,
+                                     to_date: Optional[str] = None,
+                                     filters: Optional[List] = None) -> Tuple[Optional[pd.DataFrame], int]:
 
     try:
         from_date_obj, to_date_obj, _ = __parse_date_arguments(from_date, to_date)
@@ -397,7 +390,7 @@ async def __download_parquet_data_test(guid: str,  # pylint: disable=too-many-lo
         logger.error(message)
         raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=message) from error
 
-    with tracer.start_span('download_delfin_files') as span:
+    with tracer.start_span('download_parquet_files') as span:
         span.set_tag('guid', guid)
         async with await __get_filesystem_client(token) as filesystem_client:
             with tracer.start_span('get_directory_client', child_of=span):
@@ -415,8 +408,8 @@ async def __download_parquet_data_test(guid: str,  # pylint: disable=too-many-lo
 
                 concat_response = []
                 for chunk in __split_into_chunks(download_dates, 200):
-                    responses = await __download_parquet_files_raw(chunk, time_resolution,
-                                                                   directory_client, retrieve_data_span, filters)
+                    responses = await __download_parquet_files_v1(chunk, time_resolution,
+                                                                  directory_client, retrieve_data_span, filters)
 
                     for response in responses:
                         if response is not None:
@@ -425,20 +418,58 @@ async def __download_parquet_data_test(guid: str,  # pylint: disable=too-many-lo
         status_code = 200
         if not concat_response:
             status_code = HTTPStatus.NO_CONTENT
-            return [], status_code
+            return None, status_code
 
         with tracer.start_span('concat_dataframes', child_of=span):
             df_concat = pd.concat(concat_response)
             df_concat.reset_index(drop=True, inplace=True)
 
         # Filter only the dates needed (we cannot do it directly in Parquet, as dates can be stored as strings)
-        if from_date_obj is not None and to_date_obj is not None:
-            df_concat['_dp_datetime_utc'] = pd.to_datetime(df_concat[index])
-            df_concat = df_concat[(df_concat['_dp_datetime_utc'] >= from_date_obj)
-                                  & (df_concat['_dp_datetime_utc'] < to_date_obj)]
+        if from_date_obj is not None and to_date_obj is not None and len(df_concat) > 0:
+            # Some are stored as datetime64[ns, UTC] and cannot compare directly with Timestemp objects
+            # - Hence we make all to utc=True and use tz_localize('utc') to get around that
+            df_concat['_dp_datetime_utc'] = pd.to_datetime(df_concat[index], utc=True)
+            df_concat = df_concat[(df_concat['_dp_datetime_utc'] >= from_date_obj.tz_localize('utc'))
+                                  & (df_concat['_dp_datetime_utc'] < to_date_obj.tz_localize('utc'))]
 
         # The time stamps are kept as strings - hence, they need to be parsed to datetime to filter on them
-        return json.loads(df_concat.to_json(orient='records')), status_code
+        return df_concat, status_code
+
+
+def __dataframe_to_json(records: pd.DataFrame) -> List:
+    # JSONResponse cannot handle NaN values
+    records = records.fillna('null')
+
+    # It would be better to use records.to_dict, but pandas uses narray type which JSONResponse can't handle.
+    return json.loads(records.to_json(orient='records'))
+
+
+def __dataframe_to_parquet(records: pd.DataFrame) -> BytesIO:
+    bytes_io_file = BytesIO()
+    records.to_parquet(bytes_io_file, engine='pyarrow', compression='snappy')
+    bytes_io_file.seek(0)
+
+    return bytes_io_file
+
+
+def __get_guid_config(guid: str,
+                      from_date: Optional[str] = None,
+                      to_date: Optional[str] = None) -> Tuple[str, TimeResolution]:
+    try:
+        guid_config = json.loads(config['Dataset Config'][guid])
+        index = guid_config['index']
+        horizon = guid_config['horizon']
+        time_resolution = TimeResolution[horizon]
+
+        if (from_date is None or to_date is None) and time_resolution != TimeResolution.NONE:
+            message = f'Both from_date and to_date need to be set for guid {guid}'
+            raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=message)
+
+    except KeyError as error:
+        message = f'The server is not configured for guid: {guid}'
+        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=message) from error
+
+    return index, time_resolution
 
 
 # pylint: disable=too-many-arguments
@@ -464,68 +495,11 @@ async def __download_parquet_files(timeslot_chunk: List[datetime],
 
 
 # pylint: disable=too-many-arguments
-async def __download_parquet_data_raw(guid: str,  # pylint: disable=too-many-locals
-                                      token: str,
-                                      from_date: Optional[str] = None,
-                                      to_date: Optional[str] = None,
-                                      filters: Optional[List] = None) -> Tuple[Optional[BytesIO], int]:
-
-    try:
-        from_date_obj, to_date_obj, time_resolution_enum = __parse_date_arguments(from_date, to_date)
-    except ValueError as error:
-        message = f'({type(error).__name__}) Wrong string format for date(s): {error}'
-        logger.error(message)
-        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=message) from error
-
-    with tracer.start_span('download_parquet_files') as span:
-        span.set_tag('guid', guid)
-        async with await __get_filesystem_client(token) as filesystem_client:
-            with tracer.start_span('get_directory_client', child_of=span):
-                directory_client = filesystem_client.get_directory_client(guid)
-
-            with tracer.start_span('check_directory_exists', child_of=span):
-                await __check_directory_exist(directory_client)
-
-            with tracer.start_span('retrieve_parquet_data', child_of=span) as retrieve_data_span:
-                if to_date_obj:
-                    download_dates = __get_all_dates_to_download(from_date_obj, to_date_obj, time_resolution_enum)
-                    download_dates = [item.to_pydatetime() for item in download_dates.tolist()]
-                else:
-                    download_dates = [from_date_obj]
-
-                concat_response = []
-                for chunk in __split_into_chunks(download_dates, 200):
-                    responses = await __download_parquet_files_raw(chunk, time_resolution_enum,
-                                                                   directory_client, retrieve_data_span,
-                                                                   filters)
-
-                    for response in responses:
-                        if response is not None:
-                            concat_response += [response]
-
-        status_code = 200
-        if not concat_response:
-            status_code = HTTPStatus.NO_CONTENT
-            return None, status_code
-
-        with tracer.start_span('concat_dataframes', child_of=span):
-            df_concat = pd.concat(concat_response)
-            df_concat.reset_index(drop=True, inplace=True)
-
-        with tracer.start_span('to_parquet', child_of=span):
-            bytes_io_file = BytesIO()
-            df_concat.to_parquet(bytes_io_file, engine='pyarrow', compression='snappy')
-            bytes_io_file.seek(0)
-
-        return bytes_io_file, status_code
-
-
-# pylint: disable=too-many-arguments
-async def __download_parquet_files_raw(timeslot_chunk: List[datetime],
-                                       time_resolution: TimeResolution,
-                                       directory_client: DataLakeDirectoryClient,
-                                       retrieve_data_span: Span,
-                                       filters: Optional[List] = None) -> List:
+async def __download_parquet_files_v1(timeslot_chunk: List[datetime],
+                                      time_resolution: TimeResolution,
+                                      directory_client: DataLakeDirectoryClient,
+                                      retrieve_data_span: Span,
+                                      filters: Optional[List] = None) -> List:
     async def __download(download_date: datetime):
         data = await __download_data(download_date, time_resolution, directory_client,
                                      'data.parquet', retrieve_data_span)
@@ -535,7 +509,6 @@ async def __download_parquet_files_raw(timeslot_chunk: List[datetime],
         if isinstance(data, str):
             return None
         records = pd.read_parquet(BytesIO(data), engine='pyarrow', filters=filters)
-        records = records.fillna('null')
         return records
 
     return await asyncio.gather(*[__download(timeslot) for timeslot in timeslot_chunk])  # noqa
