@@ -195,6 +195,36 @@ async def download_jao_data(horizon: str,  # pylint: disable=too-many-locals
     return Response(status_code=status_code)   # No data
 
 
+@router.get('/v1/jao', tags=["jao"], response_class=JSONResponse)
+@Metric.histogram
+async def download_jao_data_v1(horizon: str,  # pylint: disable=too-many-locals
+                               from_date: str,
+                               to_date: str,
+                               token: str = Security(access_token_header)) -> typing.Union[JSONResponse, Response]:
+    """
+    Download JAO data from from_date to to_date (time period).
+
+    The horizon parameter must be set to Yearly or Monthly depending on what dataset you want data from.
+    """
+    logger.debug('download jao data requested')
+    if horizon.lower() == "yearly":
+        guid = config['JAO']['yearly_guid']
+    elif horizon.lower() == "monthly":
+        guid = config['JAO']['monthly_guid']
+    else:
+        message = '(ValueError) The horizon value can only be Yearly or Monthly.'
+        logger.error(message)
+        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=message)
+
+    index, time_resolution = __get_guid_config(guid, from_date, to_date)
+    result, status_code = await __download_parquet_data_v1(guid, token, index, time_resolution, from_date, to_date)
+
+    if result is not None:
+        return JSONResponse(__dataframe_to_json(result), status_code=status_code)
+
+    return Response(status_code=status_code)   # No data
+
+
 @router.get('/jao_eds/{year}/{month}/{border}', tags=["jao_eds"], response_class=JSONResponse)
 @Metric.histogram
 async def download_jao_eds_data(year: int,
