@@ -232,7 +232,7 @@ def test_download_delfin(mocker):
     assert response.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
 
     response = client.get(
-        '/delfin',
+        '/v1/delfin',
         headers={'Authorization': 'secret'},
         params={'horizon': 'YEARLY', 'from_date': '2021-01-01', 'to_date': '2021-01-02'}
     )
