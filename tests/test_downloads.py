@@ -259,21 +259,23 @@ async def test_download_parquet_data_parse_exeception(mocker):
     assert execinfo.value.detail == '(ValueError) Wrong string format for date(s): Exception'
 
 
-async def test_download_parquet_data(mocker):
-    from app.routers.downloads import __download_parquet_data
+async def test_download_parquet_data_v1(mocker):
+    from app.routers.downloads import __download_parquet_data_v1
 
     filesystem_client = mocker.patch('app.routers.downloads.__get_filesystem_client')
     check_directory_exist = mocker.patch('app.routers.downloads.__check_directory_exist')
-    download_parquet_files = mocker.patch('app.routers.downloads.__download_parquet_files')
-    download_parquet_files.return_value = [[{'data': 'data'}]]
+    download_parquet_files = mocker.patch('app.routers.downloads.__download_parquet_files_v1')
+    download_parquet_files.return_value = [pd.DataFrame({'my_date': ['2021-01-01']})]
 
     guid = '12345'
     token = 'secret'
+    index = 'my_date'
+    horizon = TimeResolution.DAY
     from_date = '2021-01-01'
     to_date = '2021-01-02'
     filters = ['some filter']
 
-    result = await __download_parquet_data(guid, token, from_date, to_date, filters)
+    result = await __download_parquet_data_v1(guid, token, index, horizon, from_date, to_date, filters)
 
     assert filesystem_client.called
     assert filesystem_client.call_args.args[0] == 'secret'
@@ -282,22 +284,23 @@ async def test_download_parquet_data(mocker):
     assert download_parquet_files.await_args.args[0:2] == ([datetime(2021, 1, 1), datetime(2021, 1, 2)],
                                                            TimeResolution.DAY)
 
-    assert result[0] == [{'data': 'data'}]
+    assert result[0].to_json() == '{"my_date":{"0":"2021-01-01"},"_dp_datetime_utc":{"0":1609459200000}}'
     assert result[1] == HTTPStatus.OK
 
     download_parquet_files.return_value = []
 
-    result = await __download_parquet_data(guid, token, from_date, to_date, filters)
-    assert result[0] == []
+    result = await __download_parquet_data_v1(guid, token, index, horizon, from_date, to_date, filters)
+    assert result[0] is None
     assert result[1] == HTTPStatus.NO_CONTENT
 
 
 @pytest.mark.filterwarnings("ignore:coroutine 'AsyncMockMixin._execute_mock_call' was never awaited")
 async def test_download_parquet_files(mocker):
-    from app.routers.downloads import __download_parquet_files
+    from app.routers.downloads import __download_parquet_files_v1
     directory_client = mocker.patch('azure.storage.filedatalake.aio.DataLakeDirectoryClient')
     read_parquet = mocker.patch('app.routers.downloads.pd.read_parquet')
-    read_parquet.return_value = pd.DataFrame([{'metric_1': 'value_1', 'metric_2': 'value_2'}])
+    test_df = pd.DataFrame([{'metric_1': 'value_1', 'metric_2': 'value_2'}])
+    read_parquet.return_value = test_df
     span = mocker.patch('jaeger_client.Span')
     download_data = mocker.patch('app.routers.downloads.__download_data')
     download_data.return_value = b'some data'
@@ -306,12 +309,11 @@ async def test_download_parquet_files(mocker):
     time_resolution = TimeResolution.DAY
     filters = ['some filter']
 
-    result = await __download_parquet_files(timeslot_chunks, time_resolution, directory_client, span, filters)
+    result = await __download_parquet_files_v1(timeslot_chunks, time_resolution, directory_client, span, filters)
 
     assert download_data.call_count == 2
     assert read_parquet.call_count == 2
-    assert result == [[{'metric_1': 'value_1', 'metric_2': 'value_2'}],
-                      [{'metric_1': 'value_1', 'metric_2': 'value_2'}]]
+    assert result == [test_df, test_df]
 
 
 def test_download_jao_eds(mocker):
