@@ -61,7 +61,7 @@ def test__get_leak_cable_daily__should_return_correct_dataset(
     # -- Act -----------------------------------------------------------------
 
     with patch("app.routers.oilcable.config", new=config):
-        response = client.get("/oilcable/daily", headers={"Authorization": "secret"})
+        response = client.get("/v1/oilcable/daily", headers={"Authorization": "secret"})
 
     # -- Assert --------------------------------------------------------------
 

@@ -21,7 +21,7 @@ def get_app():
 client = get_app()
 
 
-@pytest.mark.parametrize('test_endpoint', ['/12345/json', '/jao', '/neptun', '/delfin'])
+@pytest.mark.parametrize('test_endpoint', ['/v1/12345/json', '/v1/jao', '/v1/neptun', '/v1/delfin'])
 def test_upload_file_no_authorization_token(test_endpoint):
     response = client.get(
         test_endpoint,
@@ -32,76 +32,77 @@ def test_upload_file_no_authorization_token(test_endpoint):
 
 
 def test_download_json(mocker):
-    download_parquet_data = mocker.patch('app.routers.downloads.__download_parquet_data')
-    download_parquet_data.return_value = ({'data': 'data'}, HTTPStatus.OK)
+    download_parquet_data = mocker.patch('app.routers.downloads.__download_parquet_data_v1')
+    download_parquet_data.return_value = (pd.DataFrame({'data': ['data']}), HTTPStatus.OK)
+    get_guid_config = mocker.patch('app.routers.downloads.__get_guid_config')
+    get_guid_config.return_value = 'INDEX', 'HORIZON'
 
     response = client.get(
-        '/12345/json',
+        '/v1/12345/json',
         headers={'Authorization': 'secret'},
         params={'from_date': '2021-01-01', 'to_date': '2021-01-02'}
     )
 
     assert response.status_code == HTTPStatus.OK
     assert download_parquet_data.called
-    assert download_parquet_data.await_args.args == ('12345', 'secret', '2021-01-01', '2021-01-02')
-    assert response.json() == {'data': 'data'}
+    assert download_parquet_data.await_args.args == ('12345', 'secret', 'INDEX', 'HORIZON', '2021-01-01', '2021-01-02')
+    assert response.json() == [{'data': 'data'}]
 
     response = client.get(
-        '/12345/json',
+        '/v1/12345/json',
         headers={'Authorization': 'secret'},
     )
 
     assert response.status_code == HTTPStatus.OK
     assert download_parquet_data.called
-    assert download_parquet_data.await_args.args == ('12345', 'secret', None, None)
-    assert response.json() == {'data': 'data'}
+    assert download_parquet_data.await_args.args == ('12345', 'secret', 'INDEX', 'HORIZON', None, None)
+    assert response.json() == [{'data': 'data'}]
 
 
 def test_download_jao(mocker):
     import app.routers.downloads
-    download_parquet_data = mocker.patch('app.routers.downloads.__download_parquet_data')
-    download_parquet_data.return_value = ({'data': 'data'}, HTTPStatus.OK)
+    download_parquet_data = mocker.patch('app.routers.downloads.__download_parquet_data_v1')
+    download_parquet_data.return_value = (pd.DataFrame({'data': ['data']}), HTTPStatus.OK)
+    get_guid_config = mocker.patch('app.routers.downloads.__get_guid_config')
+    get_guid_config.return_value = 'INDEX', 'HORIZON'
 
     app.routers.downloads.config = {'JAO': {'yearly_guid': 'yearly_guid_1234',
                                             'monthly_guid': 'monthly_guid_1234'}}
 
     response = client.get(
-        '/jao',
+        '/v1/jao',
         headers={'Authorization': 'secret'},
         params={'horizon': 'YEARLY', 'from_date': '2021-01-01', 'to_date': '2021-01-02'}
     )
 
     assert response.status_code == HTTPStatus.OK
     assert download_parquet_data.called
-    assert download_parquet_data.await_args.args == ('yearly_guid_1234', 'secret', '2021-01-01', '2021-01-02')
-    assert response.json() == {'data': 'data'}
+    assert download_parquet_data.await_args.args == ('yearly_guid_1234', 'secret', 'INDEX', 'HORIZON', '2021-01-01', '2021-01-02')
+    assert response.json() == [{'data': 'data'}]
 
     response = client.get(
-        '/jao',
+        '/v1/jao',
         headers={'Authorization': 'secret'},
         params={'horizon': 'MONTHLY', 'from_date': '2021-01-01', 'to_date': '2021-01-02'}
     )
 
     assert response.status_code == HTTPStatus.OK
     assert download_parquet_data.called
-    assert download_parquet_data.await_args.args == ('monthly_guid_1234', 'secret', '2021-01-01', '2021-01-02')
-    assert response.json() == {'data': 'data'}
+    assert download_parquet_data.await_args.args == ('monthly_guid_1234', 'secret', 'INDEX', 'HORIZON', '2021-01-01', '2021-01-02')
+    assert response.json() == [{'data': 'data'}]
 
     response = client.get(
-        '/jao',
+        '/v1/jao',
         headers={'Authorization': 'secret'},
         params={'horizon': 'MONTHLY'}
     )
 
-    assert response.status_code == HTTPStatus.OK
-    assert download_parquet_data.called
-    assert download_parquet_data.await_args.args == ('monthly_guid_1234', 'secret', None, None)
-    assert response.json() == {'data': 'data'}
+    assert response.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
 
     response = client.get(
-        '/jao',
+        '/v1/jao',
         headers={'Authorization': 'secret'},
-        params={'horizon': 'DAILY'}
+        params={'horizon': 'DAILY', 'from_date': '2021-01-01', 'to_date': '2021-01-02'}
     )
 
     assert response.status_code == HTTPStatus.BAD_REQUEST
@@ -110,62 +111,64 @@ def test_download_jao(mocker):
 
 def test_download_neptun(mocker):
     import app.routers.downloads
-    download_parquet_data = mocker.patch('app.routers.downloads.__download_parquet_data')
-    download_parquet_data.return_value = ({'data': 'data'}, HTTPStatus.OK)
+    download_parquet_data = mocker.patch('app.routers.downloads.__download_parquet_data_v1')
+    download_parquet_data.return_value = (pd.DataFrame({'data': ['data']}), HTTPStatus.OK)
+    get_guid_config = mocker.patch('app.routers.downloads.__get_guid_config')
+    get_guid_config.return_value = 'INDEX', 'HORIZON'
 
     app.routers.downloads.config = {'Neptun': {'daily_guid': 'daily_guid_1234',
                                                'hourly_guid': 'hourly_guid_1234',
                                                'minutely_guid': 'minutely_guid_1234'}}
 
     response = client.get(
-        '/neptun',
+        '/v1/neptun',
         headers={'Authorization': 'secret'},
         params={'horizon': 'DAILY', 'from_date': '2021-01-01', 'to_date': '2021-01-02', 'tags': 'TAG1, TAG2'}
     )
 
     assert response.status_code == HTTPStatus.OK
     assert download_parquet_data.called
-    assert download_parquet_data.await_args.args == ('daily_guid_1234', 'secret', '2021-01-01', '2021-01-02',
+    assert download_parquet_data.await_args.args == ('daily_guid_1234', 'secret', 'INDEX', 'HORIZON',
+                                                     '2021-01-01', '2021-01-02',
                                                      [[('Tag', '=', 'TAG1')], [('Tag', '=', ' TAG2')]])
-    assert response.json() == {'data': 'data'}
+    assert response.json() == [{'data': 'data'}]
 
     response = client.get(
-        '/neptun',
+        '/v1/neptun',
         headers={'Authorization': 'secret'},
         params={'horizon': 'HOURLY', 'from_date': '2021-01-01', 'to_date': '2021-01-02'}
     )
 
     assert response.status_code == HTTPStatus.OK
     assert download_parquet_data.called
-    assert download_parquet_data.await_args.args == ('hourly_guid_1234', 'secret', '2021-01-01', '2021-01-02', None)
-    assert response.json() == {'data': 'data'}
+    assert download_parquet_data.await_args.args == ('hourly_guid_1234', 'secret', 'INDEX', 'HORIZON',
+                                                     '2021-01-01', '2021-01-02', None)
+    assert response.json() == [{'data': 'data'}]
 
     response = client.get(
-        '/neptun',
+        '/v1/neptun',
         headers={'Authorization': 'secret'},
         params={'horizon': 'MINUTELY', 'from_date': '2021-01-01', 'to_date': '2021-01-02'}
     )
 
     assert response.status_code == HTTPStatus.OK
     assert download_parquet_data.called
-    assert download_parquet_data.await_args.args == ('minutely_guid_1234', 'secret', '2021-01-01', '2021-01-02', None)
-    assert response.json() == {'data': 'data'}
+    assert download_parquet_data.await_args.args == ('minutely_guid_1234', 'secret', 'INDEX', 'HORIZON',
+                                                     '2021-01-01', '2021-01-02', None)
+    assert response.json() == [{'data': 'data'}]
 
     response = client.get(
-        '/neptun',
+        '/v1/neptun',
         headers={'Authorization': 'secret'},
         params={'horizon': 'MINUTELY'}
     )
 
-    assert response.status_code == HTTPStatus.OK
-    assert download_parquet_data.called
-    assert download_parquet_data.await_args.args == ('minutely_guid_1234', 'secret', None, None, None)
-    assert response.json() == {'data': 'data'}
+    assert response.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
 
     response = client.get(
-        '/neptun',
+        '/v1/neptun',
         headers={'Authorization': 'secret'},
-        params={'horizon': 'YEARLY'}
+        params={'horizon': 'YEARLY', 'from_date': '2021-01-01', 'to_date': '2021-01-02'}
     )
 
     assert response.status_code == HTTPStatus.BAD_REQUEST
@@ -174,62 +177,64 @@ def test_download_neptun(mocker):
 
 def test_download_delfin(mocker):
     import app.routers.downloads
-    download_parquet_data = mocker.patch('app.routers.downloads.__download_parquet_data')
-    download_parquet_data.return_value = ({'data': 'data'}, HTTPStatus.OK)
+    download_parquet_data = mocker.patch('app.routers.downloads.__download_parquet_data_v1')
+    download_parquet_data.return_value = (pd.DataFrame({'data': ['data']}), HTTPStatus.OK)
+    get_guid_config = mocker.patch('app.routers.downloads.__get_guid_config')
+    get_guid_config.return_value = 'INDEX', 'HORIZON'
 
     app.routers.downloads.config = {'Delfin': {'daily_guid': 'daily_guid_1234',
                                                'hourly_guid': 'hourly_guid_1234',
                                                'minutely_guid': 'minutely_guid_1234'}}
 
     response = client.get(
-        '/delfin',
+        '/v1/delfin',
         headers={'Authorization': 'secret'},
         params={'horizon': 'DAILY', 'from_date': '2021-01-01', 'to_date': '2021-01-02', 'table_indices': '1,2'}
     )
 
     assert response.status_code == HTTPStatus.OK
     assert download_parquet_data.called
-    assert download_parquet_data.await_args.args == ('daily_guid_1234', 'secret', '2021-01-01', '2021-01-02',
+    assert download_parquet_data.await_args.args == ('daily_guid_1234', 'secret', 'INDEX', 'HORIZON',
+                                                     '2021-01-01', '2021-01-02',
                                                      [[('TABLE_INDEX', '=', 1)], [('TABLE_INDEX', '=', 2)]])
-    assert response.json() == {'data': 'data'}
+    assert response.json() == [{'data': 'data'}]
 
     response = client.get(
-        '/delfin',
+        '/v1/delfin',
         headers={'Authorization': 'secret'},
         params={'horizon': 'HOURLY', 'from_date': '2021-01-01', 'to_date': '2021-01-02'}
     )
 
     assert response.status_code == HTTPStatus.OK
     assert download_parquet_data.called
-    assert download_parquet_data.await_args.args == ('hourly_guid_1234', 'secret', '2021-01-01', '2021-01-02', None)
-    assert response.json() == {'data': 'data'}
+    assert download_parquet_data.await_args.args == ('hourly_guid_1234', 'secret', 'INDEX', 'HORIZON',
+                                                     '2021-01-01', '2021-01-02', None)
+    assert response.json() == [{'data': 'data'}]
 
     response = client.get(
-        '/delfin',
+        '/v1/delfin',
         headers={'Authorization': 'secret'},
         params={'horizon': 'MINUTELY', 'from_date': '2021-01-01', 'to_date': '2021-01-02'}
     )
 
     assert response.status_code == HTTPStatus.OK
     assert download_parquet_data.called
-    assert download_parquet_data.await_args.args == ('minutely_guid_1234', 'secret', '2021-01-01', '2021-01-02', None)
-    assert response.json() == {'data': 'data'}
+    assert download_parquet_data.await_args.args == ('minutely_guid_1234', 'secret', 'INDEX', 'HORIZON',
+                                                     '2021-01-01', '2021-01-02', None)
+    assert response.json() == [{'data': 'data'}]
 
     response = client.get(
-        '/delfin',
+        '/v1/delfin',
         headers={'Authorization': 'secret'},
         params={'horizon': 'MINUTELY'}
     )
 
-    assert response.status_code == HTTPStatus.OK
-    assert download_parquet_data.called
-    assert download_parquet_data.await_args.args == ('minutely_guid_1234', 'secret', None, None, None)
-    assert response.json() == {'data': 'data'}
+    assert response.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
 
     response = client.get(
         '/delfin',
         headers={'Authorization': 'secret'},
-        params={'horizon': 'YEARLY'}
+        params={'horizon': 'YEARLY', 'from_date': '2021-01-01', 'to_date': '2021-01-02'}
     )
 
     assert response.status_code == HTTPStatus.BAD_REQUEST
@@ -322,7 +327,7 @@ def test_download_jao_eds(mocker):
     app.routers.downloads.config = {'JAO EDS': {'guid': 'jao_eds_guid'}}
 
     response = client.get(
-        '/jao_eds/2021/04/D1-DE',
+        '/v1/jao_eds/2021/04/D1-DE',
         headers={'Authorization': 'secret'},
     )
 

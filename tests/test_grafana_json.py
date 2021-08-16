@@ -26,7 +26,7 @@ def test_connection(mocker):
     check_directory_exist = mocker.patch('app.routers.grafana_json.__check_directory_exist')
 
     response = client.get(
-        'grafana/12345',
+        'v1/grafana/12345',
         headers={'client-id': 'mr_test', 'client-secret': 'secret'}
     )
 
@@ -41,7 +41,7 @@ def test_connection_missing_headers(mocker):
     check_directory_exist = mocker.patch('app.routers.grafana_json.__check_directory_exist')
 
     response = client.get(
-        'grafana/12345'
+        'v1/grafana/12345'
     )
 
     assert response.status_code == HTTPStatus.BAD_REQUEST
@@ -56,7 +56,7 @@ def test_search(mocker):
     get_grafana_settings.return_value = {'metrics': ['c', 'a', 'b']}
 
     response = client.post(
-        'grafana/12345/search',
+        'v1/grafana/12345/search',
         headers={'client-id': 'mr_test', 'client-secret': 'secret'}
     )
 
@@ -71,7 +71,7 @@ def test_query_without_targets(mocker):
     directory_client = mocker.patch('app.routers.grafana_json.__get_directory_client')
 
     response = client.post(
-        'grafana/12345/query',
+        'v1/grafana/12345/query',
         headers={'client-id': 'mr_test', 'client-secret': 'secret'},
         json={'maxDataPoints': 31,
               'adhocFilters': [],
@@ -87,7 +87,7 @@ def test_query_without_targets(mocker):
     assert not directory_client.called
 
     response = client.post(
-        'grafana/12345/query',
+        'v1/grafana/12345/query',
         headers={'client-id': 'mr_test', 'client-secret': 'secret'},
         json={'maxDataPoints': 31,
               'adhocFilters': [],
@@ -109,7 +109,7 @@ def test_query_with_targets(mocker):
     dataframe_to_response = mocker.patch('app.routers.grafana_json.__dataframe_to_response')
 
     response = client.post(
-        'grafana/12345/query',
+        'v1/grafana/12345/query',
         headers={'client-id': 'mr_test', 'client-secret': 'secret'},
         json={'maxDataPoints': 31,
               'adhocFilters': [],
@@ -133,7 +133,7 @@ def test_query_with_targets(mocker):
 def test_annotations():
 
     response = client.post(
-        'grafana/12345/annotations',
+        'v1/grafana/12345/annotations',
         headers={'client-id': 'mr_test', 'client-secret': 'secret'}
     )
 
@@ -148,7 +148,7 @@ def test_tag_keys(mocker):
     get_grafana_settings.return_value = {'tag_keys': ['a', 'b', 'c']}
 
     response = client.post(
-        'grafana/12345/tag-keys',
+        'v1/grafana/12345/tag-keys',
         headers={'client-id': 'mr_test', 'client-secret': 'secret'}
     )
 
@@ -166,7 +166,7 @@ def test_tag_values(mocker):
     get_grafana_settings.return_value = {'tag_values': {'test_key': ['a', 'b', 'c']}}
 
     response = client.post(
-        'grafana/12345/tag-values',
+        'v1/grafana/12345/tag-values',
         headers={'client-id': 'mr_test', 'client-secret': 'secret'},
         json={'key': 'test_key'}
     )
@@ -178,7 +178,7 @@ def test_tag_values(mocker):
     assert response.json() == ['a', 'b', 'c']
 
     response = client.post(
-        'grafana/12345/tag-values',
+        'v1/grafana/12345/tag-values',
         headers={'client-id': 'mr_test', 'client-secret': 'secret'},
         json={'key': 'unknown_key'}
     )

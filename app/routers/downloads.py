@@ -223,7 +223,8 @@ async def download_jao_data_v1(horizon: str,  # pylint: disable=too-many-locals
     return Response(status_code=status_code)   # No data
 
 
-@router.get('/jao_eds/{year}/{month}/{border}', tags=["jao_eds"], response_class=JSONResponse)
+@router.get('/v1/jao_eds/{year}/{month}/{border}', tags=["jao_eds"], response_class=JSONResponse)
+@router.get('/jao_eds/{year}/{month}/{border}', tags=["jao_eds"], response_class=JSONResponse, deprecated=True)
 @Metric.histogram
 async def download_jao_eds_data(year: int,
                                 month: int,

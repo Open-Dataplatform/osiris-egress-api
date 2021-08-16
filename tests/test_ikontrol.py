@@ -29,7 +29,7 @@ def test_ikontrol_get_all_projects(data, mock_get_filesystem_client: AsyncMock,
     """
     mock_get_file_stream_for_ikontrol_file.return_value = BytesIO(data)
     response = client.get(
-        '/ikontrol/getallprojects',
+        '/v1/ikontrol/getallprojects',
         headers={'Authorization': 'secret'}
     )
 
@@ -51,7 +51,7 @@ def test_ikontrol_download_data(data, mock_get_filesystem_client: AsyncMock,
     """
     mock_get_file_stream_for_ikontrol_file.return_value = BytesIO(data)
     response = client.get(
-        '/ikontrol/123',
+        '/v1/ikontrol/123',
         headers={'Authorization': 'secret'}
     )
 
@@ -73,7 +73,7 @@ def test_ikontrol_download_zip(data, mock_get_filesystem_client: AsyncMock,
     """
     mock_get_file_stream_for_ikontrol_file.return_value = BytesIO(data)
     response = client.get(
-        '/ikontrol/getzip/123',
+        '/v1/ikontrol/getzip/123',
         headers={'Authorization': 'secret'}
     )
 
