@@ -374,8 +374,8 @@ async def download_delfin_data(horizon: str,  # pylint: disable=too-many-locals
         raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=message)
 
     # create filter. The outer list is OR and the inner list is AND.
-    table_indices_filters = [[('TABLE_INDEX', '=', index)] for index in table_indices.split(',')] if table_indices \
-        else None
+    table_indices_filters = [[('TABLE_INDEX', '=', int(index))] for index in table_indices.split(',')] if \
+        table_indices else None
 
     events, status_code = await __download_parquet_data(guid, token, from_date, to_date, table_indices_filters)
 
@@ -415,8 +415,13 @@ async def download_delfin_data_v1(horizon: str,  # pylint: disable=too-many-loca
         raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=message)
 
     # create filter. The outer list is OR and the inner list is AND.
-    table_indices_filters = [[('TABLE_INDEX', '=', index)] for index in table_indices.split(',')] if table_indices \
-        else None
+    try:
+        table_indices_filters = [[('TABLE_INDEX', '=', int(index))] for index in table_indices.split(',')] if \
+            table_indices else None
+    except ValueError as error:
+        message = '(ValueError) The table_indices must be on format <int>,<int>,...,<int>'
+        logger.error(message)
+        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=message) from error
 
     index, time_resolution = __get_guid_config(guid, from_date, to_date)
     events, status_code = await __download_parquet_data_v1(guid, token, index, time_resolution,

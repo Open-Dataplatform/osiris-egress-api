@@ -184,13 +184,13 @@ def test_download_delfin(mocker):
     response = client.get(
         '/delfin',
         headers={'Authorization': 'secret'},
-        params={'horizon': 'DAILY', 'from_date': '2021-01-01', 'to_date': '2021-01-02', 'table_indices': 'TAG1, TAG2'}
+        params={'horizon': 'DAILY', 'from_date': '2021-01-01', 'to_date': '2021-01-02', 'table_indices': '1,2'}
     )
 
     assert response.status_code == HTTPStatus.OK
     assert download_parquet_data.called
     assert download_parquet_data.await_args.args == ('daily_guid_1234', 'secret', '2021-01-01', '2021-01-02',
-                                                     [[('TABLE_INDEX', '=', 'TAG1')], [('TABLE_INDEX', '=', ' TAG2')]])
+                                                     [[('TABLE_INDEX', '=', 1)], [('TABLE_INDEX', '=', 2)]])
     assert response.json() == {'data': 'data'}
 
     response = client.get(
