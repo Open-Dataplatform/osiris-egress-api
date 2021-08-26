@@ -22,7 +22,7 @@ Generated endpoint documentation can be viewed from the endpoints /docs and /red
 
 Please refer to the generated docs regarding request validation and errors.
 
-All the endpoints are based on specifying a GUID-resource. Substitute the {guid} placeholders with the ID of 
+All the endpoints are based on specifying a GUID-resource. Substitute the **{guid}** placeholders with the ID of 
 the DataCatalog dataset or the Azure Storage Account directory you want to retrieve data from.
 
 ### Location of egressed data
